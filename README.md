@@ -6,6 +6,8 @@ an online converter, except nothing ever leaves your laptop. No uploads, no
 accounts, no limits, no tracking. Built for people who handle sensitive
 documents and would rather not send them to someone else's server.
 
+![MyPDF home, dark mode](docs/screenshot.png)
+
 ## Features
 
 | | |

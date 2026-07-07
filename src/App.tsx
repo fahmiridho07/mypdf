@@ -99,7 +99,7 @@ const fmtSize = (b: number) =>
 
 const greeting = () => {
   const h = new Date().getHours();
-  if (h < 5) return "Up late?";
+  if (h < 5) return "Burning the midnight oil";
   if (h < 12) return "Good morning";
   if (h < 18) return "Good afternoon";
   return "Good evening";

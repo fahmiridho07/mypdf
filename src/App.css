@@ -208,7 +208,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .hero p { color: var(--ink-soft); font-size: 15px; margin: 0; animation: rise 0.3s 0.1s ease both; }
 
-.hero-art { width: 225px; flex-shrink: 0; animation: rise 0.4s 0.1s ease both; }
+.hero-art { width: clamp(140px, 24vw, 225px); flex-shrink: 0; animation: rise 0.4s 0.1s ease both; }
+
+@media (max-width: 900px) {
+  .stage { padding: 28px 24px; }
+}
 
 .peek { animation: bob 3.4s ease-in-out infinite; }
 .peek.p1 { animation-duration: 3.8s; }
@@ -235,7 +239,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .quick {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 12px;
   margin-bottom: 30px;
 }
