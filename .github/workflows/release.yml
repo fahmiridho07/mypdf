@@ -42,3 +42,15 @@ jobs:
             installer is not code signed. Click "More info" then "Run anyway".
             Every release is built in public from this repository by GitHub Actions.
           releaseDraft: false
+
+  winget:
+    needs: build-windows
+    runs-on: windows-latest
+    steps:
+      - name: Submit version update to winget-pkgs
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $url = "https://github.com/fahmiridho07/mypdf/releases/download/${{ github.ref_name }}/MyPDF_${version}_x64-setup.exe"
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe update FahmiRidho.MyPDF --version $version --urls $url --submit --token "${{ secrets.WINGET_TOKEN }}"
