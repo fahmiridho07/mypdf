@@ -1,5 +1,9 @@
 # MyPDF
 
+[![CI](https://github.com/fahmiridho07/mypdf/actions/workflows/ci.yml/badge.svg)](https://github.com/fahmiridho07/mypdf/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/fahmiridho07/mypdf)](https://github.com/fahmiridho07/mypdf/releases/latest)
+[![License: AGPL 3.0](https://img.shields.io/badge/license-AGPL%203.0-blue)](LICENSE)
+
 **Every PDF chore, handled on your own machine.** MyPDF is a small, fast desktop
 app for Windows that covers the everyday PDF workflow you would normally take to
 an online converter, except nothing ever leaves your laptop. No uploads, no
@@ -26,10 +30,20 @@ documents and would rather not send them to someone else's server.
 | 🔍 **OCR** | Make scans searchable, with live per page progress |
 | 🔤 **Extract Text** | All the text into a .txt file |
 
-Plus the small things that make it pleasant: drag and drop anywhere, page
-thumbnails with file info, live progress bars, a recent work history, output
-files that never overwrite existing ones, and a settings page for your default
-OCR language and output folder.
+Most tools accept **many files at once** and process them as a batch. Plus the
+small things that make it pleasant: drag and drop anywhere, page thumbnails
+with file info, live progress bars, a recent work history, output files that
+never overwrite existing ones, Esc to jump back home, and a settings page for
+your name, default OCR language and output folder.
+
+## Testing
+
+```powershell
+python tests/engine_smoke.py   # engine test suite, core deps only
+npm run build                  # type check + frontend build
+```
+
+Both run automatically on every push via GitHub Actions.
 
 ## How it works
 

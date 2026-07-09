@@ -284,6 +284,56 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .quick-card:hover .quick-go { opacity: 1; transform: none; }
 
+.welcome {
+  background: var(--paper-raised);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px 22px;
+  margin-bottom: 26px;
+  animation: rise 0.35s ease both;
+}
+.welcome h2 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 580;
+  font-variation-settings: "opsz" 30, "SOFT" 40;
+  margin: 0 0 12px;
+}
+.welcome ul { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.welcome li { font-size: 13.5px; line-height: 1.5; color: var(--ink-soft); }
+.welcome li b { color: var(--ink); }
+.welcome-row { display: flex; gap: 10px; }
+.welcome-row input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.welcome-row input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.welcome-go {
+  padding: 10px 22px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: none;
+  border-radius: 10px;
+  font-weight: 700;
+}
+.welcome-go:hover { filter: brightness(1.07); }
+
+.notice code {
+  background: var(--paper-sunken);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 12px;
+  margin: 0 3px;
+  white-space: nowrap;
+}
+
 .loose {
   background: var(--paper-raised);
   border: 1px solid var(--line);
@@ -343,6 +393,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .mini:hover { border-color: var(--accent); color: var(--accent); }
 
 .home-error { margin-bottom: 20px; }
+.workspace .notice { margin-top: 0; }
 
 .notice {
   margin-top: 28px;

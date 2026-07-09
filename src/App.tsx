@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import "./App.css";
 
 type ToolId =
@@ -34,40 +34,40 @@ const GROUPS: ToolGroup[] = [
       { id: "rearrange", icon: "🗂️", name: "Arrange", desc: "See every page. Drag to reorder, rotate, or toss the ones you don't need.", action: "Save new PDF", accept: "pdf" },
       { id: "split", icon: "✂️", name: "Split", desc: "Break a PDF apart, page by page or by custom ranges.", action: "Split it", accept: "pdf" },
       { id: "extract_pages", icon: "📑", name: "Pick Pages", desc: "Keep only the pages you need as a fresh PDF.", action: "Extract pages", accept: "pdf" },
-      { id: "rotate", icon: "🔄", name: "Rotate", desc: "Turn the whole document, or just the sideways pages.", action: "Rotate", accept: "pdf" },
+      { id: "rotate", icon: "🔄", name: "Rotate", desc: "Turn the whole document, or just the sideways pages.", action: "Rotate", multi: true, accept: "pdf" },
     ],
   },
   {
     label: "Shrink",
     color: "#6f7a2f",
     tools: [
-      { id: "compress", icon: "🗜️", name: "Compress", desc: "Squeeze the file size down. You decide how much.", action: "Compress", accept: "pdf" },
+      { id: "compress", icon: "🗜️", name: "Compress", desc: "Squeeze the file size down. You decide how much.", action: "Compress", multi: true, accept: "pdf" },
     ],
   },
   {
     label: "Convert",
     color: "#2f7a6f",
     tools: [
-      { id: "pdf2img", icon: "🖼️", name: "PDF to Images", desc: "Render every page as a crisp PNG or JPG.", action: "Convert", accept: "pdf" },
+      { id: "pdf2img", icon: "🖼️", name: "PDF to Images", desc: "Render every page as a crisp PNG or JPG.", action: "Convert", multi: true, accept: "pdf" },
       { id: "img2pdf", icon: "📄", name: "Images to PDF", desc: "Turn photos and scans into a single tidy PDF.", action: "Build PDF", multi: true, accept: "image" },
-      { id: "office2pdf", icon: "📝", name: "Office to PDF", desc: "Word, Excel and PowerPoint, out as clean PDFs.", action: "Convert", accept: "office" },
+      { id: "office2pdf", icon: "📝", name: "Office to PDF", desc: "Word, Excel and PowerPoint, out as clean PDFs.", action: "Convert", multi: true, accept: "office" },
     ],
   },
   {
     label: "Protect",
     color: "#4a5a8f",
     tools: [
-      { id: "protect", icon: "🔒", name: "Lock", desc: "Add a password so only you can open it.", action: "Lock PDF", accept: "pdf" },
-      { id: "unlock", icon: "🔓", name: "Unlock", desc: "Remove the password from your own PDF.", action: "Unlock", accept: "pdf" },
-      { id: "watermark", icon: "💧", name: "Watermark", desc: "Stamp a faint text across every page.", action: "Add watermark", accept: "pdf" },
+      { id: "protect", icon: "🔒", name: "Lock", desc: "Add a password so only you can open it.", action: "Lock PDF", multi: true, accept: "pdf" },
+      { id: "unlock", icon: "🔓", name: "Unlock", desc: "Remove the password from your own PDF.", action: "Unlock", multi: true, accept: "pdf" },
+      { id: "watermark", icon: "💧", name: "Watermark", desc: "Stamp a faint text across every page.", action: "Add watermark", multi: true, accept: "pdf" },
     ],
   },
   {
     label: "Text",
     color: "#a0741f",
     tools: [
-      { id: "ocr", icon: "🔍", name: "OCR", desc: "Make scanned pages searchable and copy friendly.", action: "Run OCR", accept: "pdf" },
-      { id: "extract_text", icon: "🔤", name: "Extract Text", desc: "Pull all the text out into a .txt file.", action: "Extract", accept: "pdf" },
+      { id: "ocr", icon: "🔍", name: "OCR", desc: "Make scanned pages searchable and copy friendly.", action: "Run OCR", multi: true, accept: "pdf" },
+      { id: "extract_text", icon: "🔤", name: "Extract Text", desc: "Pull all the text out into a .txt file.", action: "Extract", multi: true, accept: "pdf" },
     ],
   },
 ];
@@ -113,17 +113,26 @@ const loadHistory = (): HistoryItem[] => {
   try { return JSON.parse(localStorage.getItem("mypdf.history") ?? "[]"); } catch { return []; }
 };
 
-interface Settings { ocrLang: string; outDir: string | null }
+interface Settings { ocrLang: string; outDir: string | null; name: string }
+
+const APP_VERSION = "0.2.0";
+const REPO_URL = "https://github.com/fahmiridho07/mypdf";
 
 const loadSettings = (): Settings => {
   try {
-    return { ocrLang: "ind+eng", outDir: null, ...JSON.parse(localStorage.getItem("mypdf.settings") ?? "{}") };
+    return { ocrLang: "ind+eng", outDir: null, name: "", ...JSON.parse(localStorage.getItem("mypdf.settings") ?? "{}") };
   } catch {
-    return { ocrLang: "ind+eng", outDir: null };
+    return { ocrLang: "ind+eng", outDir: null, name: "" };
   }
 };
 
 interface Progress { done: number; total: number }
+
+// Tools that take one input file can also run as a batch, one file at a time.
+const BATCHABLE = new Set<ToolId>([
+  "compress", "rotate", "watermark", "protect", "unlock",
+  "pdf2img", "ocr", "extract_text", "office2pdf",
+]);
 
 const CONFETTI = ["#c05b2a", "#6f7a2f", "#2f7a6f", "#4a5a8f", "#a0741f", "#e0a03f"];
 
@@ -268,6 +277,9 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(loadSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
+  const [batch, setBatch] = useState<{ i: number; n: number } | null>(null);
+  const [welcomed, setWelcomed] = useState(() => localStorage.getItem("mypdf.welcomed") === "1");
+  const [welcomeName, setWelcomeName] = useState("");
 
   // options
   const [splitMode, setSplitMode] = useState<"all" | "ranges">("all");
@@ -317,8 +329,22 @@ export default function App() {
     const un = listen<{ done: number; total: number }>("engine-progress", (e) => {
       setProgress({ done: e.payload.done, total: e.payload.total });
     });
-    return () => { un.then((f) => f()); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowSettings(false);
+        setToolState(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => { un.then((f) => f()); window.removeEventListener("keydown", onKey); };
   }, []);
+
+  const finishWelcome = () => {
+    const name = welcomeName.trim();
+    if (name) saveSettings({ ...settings, name });
+    localStorage.setItem("mypdf.welcomed", "1");
+    setWelcomed(true);
+  };
 
   const saveSettings = (next: Settings) => {
     setSettings(next);
@@ -405,16 +431,10 @@ export default function App() {
     localStorage.setItem("mypdf.history", JSON.stringify(next));
   };
 
-  const runTask = async () => {
-    if (!tool || files.length === 0) return;
-    setBusy(true);
-    setError("");
-    setResult(null);
-    setProgress(null);
-    const input = files[0];
-    try {
-      let params: Record<string, unknown> = {};
-      switch (tool.id) {
+  const paramsFor = (input: string): Record<string, unknown> => {
+    if (!tool) return {};
+    let params: Record<string, unknown> = {};
+    switch (tool.id) {
         case "merge":
           params = { inputs: files, output: outFor(input, "merged") };
           break;
@@ -467,31 +487,66 @@ export default function App() {
           };
           break;
       }
-      const res = await invoke<Record<string, any>>("run_engine", { task: tool.id, params });
-      const paths: string[] = res.outputs ?? (res.output ? [res.output] : []);
+    return params;
+  };
+
+  const runTask = async () => {
+    if (!tool || files.length === 0) return;
+    setBusy(true);
+    setError("");
+    setResult(null);
+    setProgress(null);
+    const targets = BATCHABLE.has(tool.id) ? files : [files[0]];
+    const allPaths: string[] = [];
+    const failures: string[] = [];
+    let sumBefore = 0;
+    let sumAfter = 0;
+    try {
+      for (let i = 0; i < targets.length; i++) {
+        setBatch(targets.length > 1 ? { i: i + 1, n: targets.length } : null);
+        setProgress(null);
+        try {
+          const res = await invoke<Record<string, any>>("run_engine", {
+            task: tool.id, params: paramsFor(targets[i]),
+          });
+          allPaths.push(...(res.outputs ?? (res.output ? [res.output] : [])));
+          if (res.before) sumBefore += res.before;
+          if (res.after) sumAfter += res.after;
+        } catch (e) {
+          failures.push(`${nameOf(targets[i])}: ${e}`);
+        }
+      }
       let message = "Done!";
       let sub: string | undefined;
-      if (tool.id === "compress" && res.before && res.after) {
-        const pct = (100 * (1 - res.after / res.before)).toFixed(1);
+      if (tool.id === "compress" && sumBefore > 0 && sumAfter > 0) {
+        const pct = (100 * (1 - sumAfter / sumBefore)).toFixed(1);
         message = `Done! ${pct}% smaller`;
-        sub = `${fmtSize(res.before)} down to ${fmtSize(res.after)}`;
-      } else if (paths.length > 1) {
-        message = `Done! ${paths.length} files created`;
-        sub = `Saved in ${dirOf(paths[0])}`;
-      } else if (paths.length === 1) {
-        sub = `Saved as ${nameOf(paths[0])}`;
+        sub = `${fmtSize(sumBefore)} down to ${fmtSize(sumAfter)}`;
+      } else if (allPaths.length > 1) {
+        message = `Done! ${allPaths.length} files created`;
+        sub = `Saved in ${dirOf(allPaths[0])}`;
+      } else if (allPaths.length === 1) {
+        sub = `Saved as ${nameOf(allPaths[0])}`;
       }
-      setResult({ message, sub, paths });
-      pushHistory({
-        toolId: tool.id,
-        note: paths.length > 1 ? `${nameOf(input)} (${paths.length} files)` : nameOf(paths[0] ?? input),
-        paths, when: Date.now(),
-      });
-    } catch (e) {
-      setError(String(e));
+      if (failures.length > 0) {
+        setError(
+          (allPaths.length > 0 ? `${failures.length} of ${targets.length} files failed:\n` : "") +
+          failures.join("\n"));
+      }
+      if (allPaths.length > 0) {
+        setResult({ message, sub, paths: allPaths });
+        pushHistory({
+          toolId: tool.id,
+          note: allPaths.length > 1
+            ? `${nameOf(targets[0])} (${allPaths.length} files)`
+            : nameOf(allPaths[0] ?? targets[0]),
+          paths: allPaths, when: Date.now(),
+        });
+      }
     } finally {
       setBusy(false);
       setProgress(null);
+      setBatch(null);
     }
   };
 
@@ -589,6 +644,16 @@ export default function App() {
             </header>
 
             <div className="options panelbox">
+              <span className="setting-label">Your name</span>
+              <label>Used only for the greeting on the home screen.
+                <input
+                  value={settings.name}
+                  onChange={(e) => saveSettings({ ...settings, name: e.target.value })}
+                  placeholder="leave empty for no name"
+                  maxLength={30}
+                />
+              </label>
+
               <span className="setting-label">Default OCR language</span>
               <div className="chips">
                 {([["ind+eng", "Indonesian + English"], ["ind", "Indonesian"], ["eng", "English"]] as const).map(([v, l]) => (
@@ -615,18 +680,48 @@ export default function App() {
                   <button className="link" onClick={pickOutDir}>Change folder</button>
                 </p>
               )}
+
+              <span className="setting-label">About</span>
+              <p className="option-hint">
+                MyPDF {APP_VERSION}, free and open source under AGPL 3.0.
+                Everything runs on this computer; the app makes no network requests.{" "}
+                <button className="link" onClick={() => openUrl(REPO_URL)}>Source code on GitHub</button>
+              </p>
             </div>
           </div>
         ) : !tool ? (
           <div className="home">
             <div className="hero">
               <div className="hero-copy">
-                <span className="hello">{greeting()}, Fahmi 👋</span>
+                <span className="hello">
+                  {settings.name ? `${greeting()}, ${settings.name} 👋` : `${greeting()} 👋`}
+                </span>
                 <h1>Every PDF chore,<br />handled right here.</h1>
                 <p>Pick a tool on the left, or just drag files anywhere onto this window.</p>
               </div>
               <HeroArt />
             </div>
+
+            {!welcomed && (
+              <div className="welcome">
+                <h2>Welcome in! Three things worth knowing:</h2>
+                <ul>
+                  <li>🛡️ <b>Everything stays on this computer.</b> No uploads, no accounts, no limits.</li>
+                  <li>🖐️ <b>Drag files anywhere</b> onto this window and MyPDF will ask what to do with them.</li>
+                  <li>🧰 <b>Some tools use free helpers.</b> Compression, OCR and Office conversion get stronger when Ghostscript, Tesseract or LibreOffice are installed. The app will point you there when needed.</li>
+                </ul>
+                <div className="welcome-row">
+                  <input
+                    value={welcomeName}
+                    onChange={(e) => setWelcomeName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") finishWelcome(); }}
+                    placeholder="What should we call you? (optional)"
+                    maxLength={30}
+                  />
+                  <button className="welcome-go" onClick={finishWelcome}>Let's go</button>
+                </div>
+              </div>
+            )}
 
             {error && <div className="error home-error">{error}</div>}
 
@@ -709,6 +804,19 @@ export default function App() {
                 <p>{tool.desc}</p>
               </div>
             </header>
+
+            {missingFor(tool) && (
+              <div className="notice">
+                {tool.id === "ocr" ? (
+                  <>This tool needs two free helpers that are not installed yet:
+                    Tesseract (<code>winget install UB-Mannheim.TesseractOCR</code>) and
+                    ocrmypdf (<code>pip install ocrmypdf</code>). Install them, then reopen MyPDF.</>
+                ) : (
+                  <>This tool needs LibreOffice, which is not installed yet:
+                    <code>winget install TheDocumentFoundation.LibreOffice</code>. Install it, then reopen MyPDF.</>
+                )}
+              </div>
+            )}
 
             <button className={`dropzone${files.length > 0 ? " compact" : ""}`} onClick={pickFiles} disabled={busy}>
               {files.length === 0 ? (
@@ -924,7 +1032,15 @@ export default function App() {
               style={busy && pct != null ? ({ "--pct": `${pct}%` } as React.CSSProperties) : undefined}
             >
               {busy ? <span className="spinner" /> : null}
-              {busy ? (pct != null ? `Working on it… ${pct}%` : "Working on it…") : tool.action}
+              {busy
+                ? [
+                    "Working on it…",
+                    batch ? ` file ${batch.i} of ${batch.n}` : "",
+                    pct != null ? ` ${pct}%` : "",
+                  ].join("")
+                : files.length > 1 && BATCHABLE.has(tool.id)
+                  ? `${tool.action} · ${files.length} files`
+                  : tool.action}
             </button>
 
             {error && <div className="error">{error}</div>}
