@@ -58,6 +58,17 @@ percentages. Heavier features call battle tested externals per task:
 Ghostscript for compression, LibreOffice for Office conversion, and
 Tesseract + ocrmypdf for OCR.
 
+## Installing
+
+Grab the latest setup exe from the
+[releases page](https://github.com/fahmiridho07/mypdf/releases/latest) and run it.
+
+> **Windows SmartScreen note.** The installer is not code signed (signing
+> certificates cost money this free project does not have), so Windows may show
+> "Windows protected your PC". Click **More info**, then **Run anyway**. The
+> entire source code is in this repository and every release is built from it
+> in public by GitHub Actions, so you can verify exactly what you are running.
+
 ## Requirements
 
 To run the app you need:

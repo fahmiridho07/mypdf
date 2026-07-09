@@ -36,4 +36,9 @@ jobs:
           releaseBody: >
             Download the setup exe below (or the MSI if you prefer).
             Requirements and optional per feature tools are listed in the README.
+
+
+            Windows SmartScreen may warn about an unrecognized app because the
+            installer is not code signed. Click "More info" then "Run anyway".
+            Every release is built in public from this repository by GitHub Actions.
           releaseDraft: false
