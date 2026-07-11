@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { Icon } from "./icons";
 import "./App.css";
 
 type ToolId =
@@ -15,7 +16,6 @@ type Accept = "pdf" | "image" | "office";
 
 interface Tool {
   id: ToolId;
-  icon: string;
   name: string;
   desc: string;
   action: string;
@@ -30,44 +30,44 @@ const GROUPS: ToolGroup[] = [
     label: "Organize",
     color: "#c05b2a",
     tools: [
-      { id: "merge", icon: "🧩", name: "Merge", desc: "Stack several PDFs into one file, in any order you like.", action: "Merge files", multi: true, accept: "pdf" },
-      { id: "rearrange", icon: "🗂️", name: "Arrange", desc: "See every page. Drag to reorder, rotate, or toss the ones you don't need.", action: "Save new PDF", accept: "pdf" },
-      { id: "split", icon: "✂️", name: "Split", desc: "Break a PDF apart, page by page or by custom ranges.", action: "Split it", accept: "pdf" },
-      { id: "extract_pages", icon: "📑", name: "Pick Pages", desc: "Keep only the pages you need as a fresh PDF.", action: "Extract pages", accept: "pdf" },
-      { id: "rotate", icon: "🔄", name: "Rotate", desc: "Turn the whole document, or just the sideways pages.", action: "Rotate", multi: true, accept: "pdf" },
+      { id: "merge", name: "Merge", desc: "Stack several PDFs into one file, in any order you like.", action: "Merge files", multi: true, accept: "pdf" },
+      { id: "rearrange", name: "Arrange", desc: "See every page. Drag to reorder, rotate, or toss the ones you don't need.", action: "Save new PDF", accept: "pdf" },
+      { id: "split", name: "Split", desc: "Break a PDF apart, page by page or by custom ranges.", action: "Split it", accept: "pdf" },
+      { id: "extract_pages", name: "Pick Pages", desc: "Keep only the pages you need as a fresh PDF.", action: "Extract pages", accept: "pdf" },
+      { id: "rotate", name: "Rotate", desc: "Turn the whole document, or just the sideways pages.", action: "Rotate", multi: true, accept: "pdf" },
     ],
   },
   {
     label: "Shrink",
     color: "#6f7a2f",
     tools: [
-      { id: "compress", icon: "🗜️", name: "Compress", desc: "Squeeze the file size down. You decide how much.", action: "Compress", multi: true, accept: "pdf" },
+      { id: "compress", name: "Compress", desc: "Squeeze the file size down. You decide how much.", action: "Compress", multi: true, accept: "pdf" },
     ],
   },
   {
     label: "Convert",
     color: "#2f7a6f",
     tools: [
-      { id: "pdf2img", icon: "🖼️", name: "PDF to Images", desc: "Render every page as a crisp PNG or JPG.", action: "Convert", multi: true, accept: "pdf" },
-      { id: "img2pdf", icon: "📄", name: "Images to PDF", desc: "Turn photos and scans into a single tidy PDF.", action: "Build PDF", multi: true, accept: "image" },
-      { id: "office2pdf", icon: "📝", name: "Office to PDF", desc: "Word, Excel and PowerPoint, out as clean PDFs.", action: "Convert", multi: true, accept: "office" },
+      { id: "pdf2img", name: "PDF to Images", desc: "Render every page as a crisp PNG or JPG.", action: "Convert", multi: true, accept: "pdf" },
+      { id: "img2pdf", name: "Images to PDF", desc: "Turn photos and scans into a single tidy PDF.", action: "Build PDF", multi: true, accept: "image" },
+      { id: "office2pdf", name: "Office to PDF", desc: "Word, Excel and PowerPoint, out as clean PDFs.", action: "Convert", multi: true, accept: "office" },
     ],
   },
   {
     label: "Protect",
     color: "#4a5a8f",
     tools: [
-      { id: "protect", icon: "🔒", name: "Lock", desc: "Add a password so only you can open it.", action: "Lock PDF", multi: true, accept: "pdf" },
-      { id: "unlock", icon: "🔓", name: "Unlock", desc: "Remove the password from your own PDF.", action: "Unlock", multi: true, accept: "pdf" },
-      { id: "watermark", icon: "💧", name: "Watermark", desc: "Stamp a faint text across every page.", action: "Add watermark", multi: true, accept: "pdf" },
+      { id: "protect", name: "Lock", desc: "Add a password so only you can open it.", action: "Lock PDF", multi: true, accept: "pdf" },
+      { id: "unlock", name: "Unlock", desc: "Remove the password from your own PDF.", action: "Unlock", multi: true, accept: "pdf" },
+      { id: "watermark", name: "Watermark", desc: "Stamp a faint text across every page.", action: "Add watermark", multi: true, accept: "pdf" },
     ],
   },
   {
     label: "Text",
     color: "#a0741f",
     tools: [
-      { id: "ocr", icon: "🔍", name: "OCR", desc: "Make scanned pages searchable and copy friendly.", action: "Run OCR", multi: true, accept: "pdf" },
-      { id: "extract_text", icon: "🔤", name: "Extract Text", desc: "Pull all the text out into a .txt file.", action: "Extract", multi: true, accept: "pdf" },
+      { id: "ocr", name: "OCR", desc: "Make scanned pages searchable and copy friendly.", action: "Run OCR", multi: true, accept: "pdf" },
+      { id: "extract_text", name: "Extract Text", desc: "Pull all the text out into a .txt file.", action: "Extract", multi: true, accept: "pdf" },
     ],
   },
 ];
@@ -612,7 +612,7 @@ export default function App() {
                   className={`nav-item${tool?.id === t.id ? " active" : ""}`}
                   onClick={() => setTool(t)}
                 >
-                  <span className="nav-icon">{t.icon}</span>
+                  <span className="nav-icon"><Icon id={t.id} size={17} /></span>
                   {t.name}
                   {missingFor(t) && <span className="nav-dot" title="Needs an extra install" />}
                 </button>
@@ -625,10 +625,10 @@ export default function App() {
             className={`nav-item${showSettings ? " active" : ""}`}
             onClick={() => { setTool(null); setShowSettings(true); }}
           >
-            <span className="nav-icon">⚙️</span>
+            <span className="nav-icon"><Icon id="settings" size={17} /></span>
             Settings
           </button>
-          <span className="lock-note">🛡️ 100% offline. Files never leave this laptop.</span>
+          <span className="lock-note"><Icon id="shield" size={14} /> 100% offline. Files never leave this laptop.</span>
         </footer>
       </aside>
 
@@ -636,7 +636,7 @@ export default function App() {
         {showSettings ? (
           <div className="workspace">
             <header className="ws-head">
-              <span className="ws-badge">⚙️</span>
+              <span className="ws-badge settings-badge"><Icon id="settings" size={26} /></span>
               <div>
                 <h1>Settings</h1>
                 <p>Small preferences, stored on this machine only.</p>
@@ -706,9 +706,9 @@ export default function App() {
               <div className="welcome">
                 <h2>Welcome in! Three things worth knowing:</h2>
                 <ul>
-                  <li>🛡️ <b>Everything stays on this computer.</b> No uploads, no accounts, no limits.</li>
-                  <li>🖐️ <b>Drag files anywhere</b> onto this window and MyPDF will ask what to do with them.</li>
-                  <li>🧰 <b>Some tools use free helpers.</b> Compression, OCR and Office conversion get stronger when Ghostscript, Tesseract or LibreOffice are installed. The app will point you there when needed.</li>
+                  <li><b>Everything stays on this computer.</b> No uploads, no accounts, no limits.</li>
+                  <li><b>Drag files anywhere</b> onto this window and MyPDF will ask what to do with them.</li>
+                  <li><b>Some tools use free helpers.</b> Compression, OCR and Office conversion get stronger when Ghostscript, Tesseract or LibreOffice are installed. The app will point you there when needed.</li>
                 </ul>
                 <div className="welcome-row">
                   <input
@@ -739,7 +739,7 @@ export default function App() {
                         setTool(t);
                         addFiles(picked, t);
                       }}>
-                      {t.icon} {t.name}
+                      <Icon id={t.id} size={14} /> {t.name}
                     </button>
                   ))}
                 </div>
@@ -750,7 +750,7 @@ export default function App() {
               {quickPicks.map((t, i) => (
                 <button key={t.id} className="quick-card" style={{ "--g": colorOf(t.id), animationDelay: `${i * 70}ms` } as React.CSSProperties}
                   onClick={() => setTool(t)}>
-                  <span className="quick-icon">{t.icon}</span>
+                  <span className="quick-icon"><Icon id={t.id} size={24} /></span>
                   <span className="quick-name">{t.name}</span>
                   <span className="quick-desc">{t.desc}</span>
                   <span className="quick-go">Open →</span>
@@ -771,7 +771,9 @@ export default function App() {
                     const t = ALL_TOOLS.find((x) => x.id === h.toolId);
                     return (
                       <li key={i} style={{ animationDelay: `${i * 40}ms` }}>
-                        <span className="history-icon" style={{ "--g": colorOf(h.toolId) } as React.CSSProperties}>{t?.icon}</span>
+                        <span className="history-icon" style={{ "--g": colorOf(h.toolId) } as React.CSSProperties}>
+                          {t && <Icon id={t.id} size={14} />}
+                        </span>
                         <span className="history-note" title={h.paths[0]}>{h.note}</span>
                         <span className="history-tool">{t?.name}</span>
                         {h.paths[0] && (
@@ -798,7 +800,7 @@ export default function App() {
         ) : (
           <div className="workspace" key={tool.id} style={{ "--g": colorOf(tool.id) } as React.CSSProperties}>
             <header className="ws-head">
-              <span className="ws-badge">{tool.icon}</span>
+              <span className="ws-badge"><Icon id={tool.id} size={26} /></span>
               <div>
                 <h1>{tool.name}</h1>
                 <p>{tool.desc}</p>

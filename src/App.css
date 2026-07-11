@@ -131,7 +131,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: #fff;
   font-weight: 600;
 }
-.nav-icon { font-size: 15px; width: 20px; text-align: center; }
+.nav-icon {
+  width: 20px;
+  display: grid;
+  place-items: center;
+  color: var(--g, var(--ink-soft));
+}
+.nav-item.active .nav-icon { color: #fff; }
 .nav-dot {
   position: absolute; right: 10px;
   width: 7px; height: 7px; border-radius: 50%;
@@ -167,6 +173,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .setting-label:first-child { margin-top: 0; }
 .lock-note { font-size: 11.5px; color: var(--ink-soft); line-height: 1.45; display: block; }
+.lock-note svg { vertical-align: -2.5px; margin-right: 3px; color: var(--ok); }
 
 .stage {
   position: relative;
@@ -270,7 +277,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .quick-card:hover { transform: translateY(-3px); border-color: var(--g); }
 .quick-card:hover::before { opacity: 1; }
-.quick-icon { font-size: 22px; }
+.quick-icon { color: var(--g); }
 .quick-name { font-weight: 700; font-size: 14.5px; }
 .quick-desc { font-size: 12px; color: var(--ink-soft); line-height: 1.4; }
 .quick-go {
@@ -378,7 +385,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   display: grid; place-items: center;
   border-radius: 8px;
   background: color-mix(in srgb, var(--g) 14%, transparent);
-  font-size: 14px;
+  color: var(--g);
 }
 .history-note { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-tool { color: var(--ink-soft); font-size: 12px; }
@@ -422,11 +429,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .ws-badge {
   width: 52px; height: 52px;
   display: grid; place-items: center;
-  font-size: 26px;
+  color: var(--g);
   border-radius: 15px;
   background: color-mix(in srgb, var(--g) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--g) 30%, transparent);
 }
+.settings-badge { --g: var(--ink-soft); }
 .ws-head h1 {
   font-family: var(--font-display);
   font-size: 26px;
@@ -594,6 +602,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .options input:focus { outline: 2px solid var(--g, var(--accent)); outline-offset: -1px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip svg { vertical-align: -2.5px; margin-right: 2px; color: var(--g, var(--accent)); }
+.chip.on svg { color: #fff; }
+
 .chip {
   padding: 7px 14px;
   border: 1px solid var(--line);
