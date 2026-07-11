@@ -11,6 +11,13 @@ node_modules
 dist
 dist-ssr
 *.local
+src-tauri/target/
+src-tauri/gen/schemas/
+__pycache__/
+
+# Claude Code local state (machine-specific, never shared)
+.claude/
+CLAUDE.md
 
 # Editor directories and files
 .vscode/*

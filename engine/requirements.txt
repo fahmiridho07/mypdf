@@ -1,0 +1,6 @@
+# Direct Python deps of pdf_engine.py — install: python -m pip install -r requirements.txt
+# External tools (Ghostscript, Tesseract, LibreOffice) are optional and detected via the
+# "doctor" task; they are installed system-wide, not via pip.
+pymupdf>=1.28.0
+pikepdf>=10.9.1
+ocrmypdf>=16.13.0
