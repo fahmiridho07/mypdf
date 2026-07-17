@@ -128,6 +128,40 @@ def main():
         r = call("compress", {"input": a, "output": os.path.join(tmp, "c.pdf")})
         check("compress (any engine)", r["ok"] and r["result"]["after"] > 0)
 
+        r = call("compress", {"input": a, "mode": "target", "target_bytes": 10_000_000,
+                              "output": os.path.join(tmp, "ct.pdf")})
+        check("compress target mode", r["ok"] and r["result"]["after"] > 0)
+
+        r = call("page_numbers", {"input": merged, "fmt": "n-of-total", "skip": 1,
+                                  "output": os.path.join(tmp, "num.pdf")})
+        ok_num = False
+        if r["ok"]:
+            import fitz as _f
+            d = _f.open(r["result"]["output"])
+            ok_num = "1 / 4" in d[1].get_text() and "/" not in d[0].get_text()
+            d.close()
+        check("page numbers skip cover", ok_num)
+
+        r = call("set_metadata", {"input": a, "title": "Test Title", "author": "Tester",
+                                  "output": os.path.join(tmp, "md.pdf")})
+        ok_md = False
+        if r["ok"]:
+            import fitz as _f
+            d = _f.open(r["result"]["output"])
+            ok_md = d.metadata["title"] == "Test Title" and d.metadata["author"] == "Tester"
+            d.close()
+        check("set metadata", ok_md)
+
+        r = call("rearrange", {"input": merged, "order": [0, 0, 1], "rotations": [0, 90, 0],
+                               "output": os.path.join(tmp, "dup.pdf")})
+        ok_dup = False
+        if r["ok"]:
+            import fitz as _f
+            d = _f.open(r["result"]["output"])
+            ok_dup = d.page_count == 3 and d[1].rotation == 90 and d[0].rotation == 0
+            d.close()
+        check("rearrange duplicates a page with its own rotation", ok_dup)
+
         r = call("pdf2docx", {"input": a, "output": os.path.join(tmp, "a.docx")})
         try:
             import pdf2docx  # noqa: F401

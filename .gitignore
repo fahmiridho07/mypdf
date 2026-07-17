@@ -29,3 +29,7 @@ CLAUDE.md
 *.njsproj
 *.sln
 *.sw?
+
+# bundled Python runtime, produced by scripts/prepare-python.ps1
+src-tauri/python-embed/*
+!src-tauri/python-embed/README.md

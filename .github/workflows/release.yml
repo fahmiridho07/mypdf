@@ -9,8 +9,12 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,6 +29,22 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Install Linux system deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: actions/setup-python@v5
+        if: matrix.os == 'windows-latest'
+        with:
+          python-version: "3.11"
+
+      - name: Bundle the Python runtime (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: ./scripts/prepare-python.ps1
+
       - run: npm ci
 
       - uses: tauri-apps/tauri-action@v0
@@ -34,8 +54,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "MyPDF __VERSION__"
           releaseBody: >
-            Download the setup exe below (or the MSI if you prefer).
-            Requirements and optional per feature tools are listed in the README.
+            Windows builds ship with everything included. On Linux and macOS,
+            install Python 3.10+ with `pip install pymupdf pikepdf pillow`.
+            Optional per feature tools are listed in the README.
 
 
             Windows SmartScreen may warn about an unrecognized app because the
@@ -44,7 +65,7 @@ jobs:
           releaseDraft: false
 
   winget:
-    needs: build-windows
+    needs: build
     runs-on: windows-latest
     steps:
       - name: Submit version update to winget-pkgs

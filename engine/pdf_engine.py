@@ -209,40 +209,71 @@ def task_extract_pages(p):
     return {"output": outp, "pages": len(pages)}
 
 
+def _gs_custom_args(dpi, quality):
+    return [
+        "-dDownsampleColorImages=true",
+        "-dColorImageDownsampleType=/Bicubic",
+        f"-dColorImageResolution={dpi}",
+        "-dDownsampleGrayImages=true",
+        "-dGrayImageDownsampleType=/Bicubic",
+        f"-dGrayImageResolution={dpi}",
+        "-dDownsampleMonoImages=true",
+        f"-dMonoImageResolution={min(600, dpi * 2)}",
+        "-dAutoFilterColorImages=false",
+        "-dAutoFilterGrayImages=false",
+        "-dColorImageFilter=/DCTEncode",
+        "-dGrayImageFilter=/DCTEncode",
+        f"-dJPEGQ={quality}",
+    ]
+
+
 def task_compress(p):
-    """Compress via Ghostscript. Either a preset level (screen/ebook/printer)
-    or custom image downsampling (dpi 30..300, jpeg quality 10..95)."""
+    """Compress via Ghostscript. Three modes: a preset level
+    (screen/ebook/printer), custom image downsampling (dpi 30..300, jpeg
+    quality 10..95), or "target" which tries progressively stronger settings
+    until the output fits under target_bytes."""
     inp, outp = p["input"], unique_path(p["output"])
     open_pdf(inp).close()  # fail early with a clear message if locked
     gs = find_tool("gswin64c", "gs")
     before = os.path.getsize(inp)
+    met_target = None
     if gs:
-        args = [gs, "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.5",
+        base = [gs, "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.5",
                 "-dNOPAUSE", "-dQUIET", "-dBATCH"]
-        if p.get("mode") == "custom":
-            dpi = max(30, min(300, int(p.get("dpi", 120))))
-            quality = max(10, min(95, int(p.get("quality", 70))))
-            args += [
-                "-dDownsampleColorImages=true",
-                "-dColorImageDownsampleType=/Bicubic",
-                f"-dColorImageResolution={dpi}",
-                "-dDownsampleGrayImages=true",
-                "-dGrayImageDownsampleType=/Bicubic",
-                f"-dGrayImageResolution={dpi}",
-                "-dDownsampleMonoImages=true",
-                f"-dMonoImageResolution={min(600, dpi * 2)}",
-                "-dAutoFilterColorImages=false",
-                "-dAutoFilterGrayImages=false",
-                "-dColorImageFilter=/DCTEncode",
-                "-dGrayImageFilter=/DCTEncode",
-                f"-dJPEGQ={quality}",
-            ]
+        if p.get("mode") == "target":
+            target = max(50 * 1024, int(p.get("target_bytes", 2 * 1024 * 1024)))
+            ladder = [(200, 85), (150, 75), (120, 65), (96, 55), (72, 45), (60, 35), (50, 25)]
+            best = None  # (size, path)
+            for step, (dpi, quality) in enumerate(ladder, 1):
+                attempt = outp + f".try{step}"
+                r = run(base + _gs_custom_args(dpi, quality) + [f"-sOutputFile={attempt}", inp])
+                emit_progress(step, len(ladder))
+                if r.returncode != 0 or not os.path.isfile(attempt):
+                    continue
+                size = os.path.getsize(attempt)
+                if best is None or size < best[0]:
+                    if best:
+                        os.remove(best[1])
+                    best = (size, attempt)
+                else:
+                    os.remove(attempt)
+                if size <= target:
+                    break
+            if best is None:
+                raise RuntimeError("Ghostscript could not produce any output.")
+            shutil.move(best[1], outp)
+            met_target = best[0] <= target
         else:
-            level = p.get("level", "ebook")  # screen | ebook | printer
-            args.append(f"-dPDFSETTINGS=/{level}")
-        r = run(args + [f"-sOutputFile={outp}", inp])
-        if r.returncode != 0:
-            raise RuntimeError(f"Ghostscript gagal: {r.stderr[:500]}")
+            if p.get("mode") == "custom":
+                dpi = max(30, min(300, int(p.get("dpi", 120))))
+                quality = max(10, min(95, int(p.get("quality", 70))))
+                args = base + _gs_custom_args(dpi, quality)
+            else:
+                level = p.get("level", "ebook")  # screen | ebook | printer
+                args = base + [f"-dPDFSETTINGS=/{level}"]
+            r = run(args + [f"-sOutputFile={outp}", inp])
+            if r.returncode != 0:
+                raise RuntimeError(f"Ghostscript failed: {r.stderr[:500]}")
         engine = "ghostscript"
     else:
         import fitz
@@ -254,7 +285,12 @@ def task_compress(p):
     if after >= before:  # keep the smaller original
         shutil.copyfile(inp, outp)
         after = before
-    return {"output": outp, "before": before, "after": after, "engine": engine}
+        if met_target is not None:
+            met_target = before <= int(p.get("target_bytes", 2 * 1024 * 1024))
+    result = {"output": outp, "before": before, "after": after, "engine": engine}
+    if met_target is not None:
+        result["met_target"] = met_target
+    return result
 
 
 def task_rotate(p):
@@ -356,9 +392,13 @@ def task_office2pdf(p):
     import tempfile
     outp = unique_path(p["output"])
     # Convert into a scratch dir first: soffice always writes <stem>.pdf and
-    # would silently overwrite an existing file in the target folder.
+    # would silently overwrite an existing file in the target folder. A unique
+    # user profile dir lets several conversions run in parallel.
     with tempfile.TemporaryDirectory(prefix="mypdf_") as tmp:
-        r = run([soffice, "--headless", "--convert-to", "pdf",
+        profile = (tmp.replace("\\", "/")).rstrip("/")
+        r = run([soffice, "--headless",
+                 f"-env:UserInstallation=file:///{profile}/lo_profile",
+                 "--convert-to", "pdf",
                  "--outdir", tmp, p["input"]], timeout=300)
         produced = os.path.join(
             tmp, os.path.splitext(os.path.basename(p["input"]))[0] + ".pdf")
@@ -400,6 +440,55 @@ def task_ocr(p):
     proc.wait(timeout=1800)
     if proc.returncode != 0:
         raise RuntimeError(f"OCR failed: {''.join(tail)[:800]}")
+    return {"output": outp}
+
+
+def task_page_numbers(p):
+    """Stamp page numbers. position: bottom-center | bottom-right |
+    bottom-left | top-right | top-left. fmt: "n" | "page-n" | "n-of-total".
+    skip: number of leading pages to leave unnumbered (covers)."""
+    doc = open_pdf(p["input"])
+    position = p.get("position", "bottom-center")
+    fmt = p.get("fmt", "n")
+    skip = max(0, int(p.get("skip", 0)))
+    start = int(p.get("start", 1))
+    size = max(6, min(24, int(p.get("size", 10))))
+    total = doc.page_count - skip
+    margin = 28
+    for idx in range(skip, doc.page_count):
+        n = start + idx - skip
+        text = {"n": str(n), "page-n": f"Page {n}",
+                "n-of-total": f"{n} / {total}"}.get(fmt, str(n))
+        page = doc[idx]
+        width = fitz_text_length(text, size)
+        r = page.rect
+        x = {"bottom-center": (r.width - width) / 2, "top-center": (r.width - width) / 2,
+             "bottom-right": r.width - margin - width, "top-right": r.width - margin - width,
+             "bottom-left": margin, "top-left": margin}.get(position, (r.width - width) / 2)
+        y = margin if position.startswith("top") else r.height - margin + size * 0.35
+        page.insert_text((x, y), text, fontsize=size, fontname="helv",
+                         color=(0.25, 0.23, 0.2))
+    outp = unique_path(p["output"])
+    doc.save(outp, garbage=3, deflate=True)
+    doc.close()
+    return {"output": outp, "numbered": total}
+
+
+def fitz_text_length(text, size):
+    import fitz
+    return fitz.get_text_length(text, fontname="helv", fontsize=size)
+
+
+def task_set_metadata(p):
+    doc = open_pdf(p["input"])
+    meta = doc.metadata or {}
+    for key in ("title", "author", "subject", "keywords"):
+        if key in p:
+            meta[key] = p[key]
+    doc.set_metadata(meta)
+    outp = unique_path(p["output"])
+    doc.save(outp, garbage=3, deflate=True)
+    doc.close()
     return {"output": outp}
 
 
@@ -513,13 +602,34 @@ def task_rearrange(p):
     them to the new page positions. Omitted pages are dropped."""
     src = open_pdf(p["input"])
     flatten_signatures(src)
-    order = [i for i in p["order"] if isinstance(i, int) and 0 <= i < src.page_count]
-    if not order:
+    raw = p["order"]
+    keep = [(pos, i) for pos, i in enumerate(raw)
+            if isinstance(i, int) and 0 <= i < src.page_count]
+    if not keep:
         raise ValueError("Keep at least one page.")
-    rotations = {int(k): int(v) for k, v in (p.get("rotations") or {}).items()}
-    src.select(order)
-    for pos, pg in enumerate(order):
-        extra = rotations.get(pg, 0)
+    order = [i for _, i in keep]
+    # rotations: list of extra degrees aligned with order (duplicated pages
+    # may be rotated independently); a dict keyed by page also still works
+    rot_in = p.get("rotations") or []
+    if isinstance(rot_in, dict):
+        rots = [int(rot_in.get(str(i), rot_in.get(i, 0))) for _, i in keep]
+    else:
+        rots = [int(rot_in[pos]) if pos < len(rot_in) else 0 for pos, _ in keep]
+    # Duplicated entries would share one page object after select(), which
+    # makes their rotations move in lockstep. Give repeats an independent
+    # full copy first.
+    seen = set()
+    mapped = []
+    for i in order:
+        if i in seen:
+            new_idx = src.page_count
+            src.fullcopy_page(i)
+            mapped.append(new_idx)
+        else:
+            seen.add(i)
+            mapped.append(i)
+    src.select(mapped)
+    for pos, extra in enumerate(rots):
         if extra:
             page = src[pos]
             page.set_rotation((page.rotation + extra) % 360)
@@ -558,6 +668,8 @@ TASKS = {
     "img2pdf": task_img2pdf,
     "office2pdf": task_office2pdf,
     "pdf2docx": task_pdf2docx,
+    "page_numbers": task_page_numbers,
+    "set_metadata": task_set_metadata,
     "ocr": task_ocr,
     "extract_text": task_extract_text,
     "thumbnail": task_thumbnail,

@@ -5,70 +5,56 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Icon } from "./icons";
+import { Lang, STRINGS } from "./i18n";
 import "./App.css";
 
 type ToolId =
   | "merge" | "split" | "extract_pages" | "compress" | "rotate"
   | "watermark" | "protect" | "unlock" | "pdf2img" | "img2pdf"
-  | "office2pdf" | "pdf2docx" | "ocr" | "extract_text" | "rearrange";
+  | "office2pdf" | "pdf2docx" | "ocr" | "extract_text" | "rearrange"
+  | "page_numbers" | "set_metadata";
 
 type Accept = "pdf" | "image" | "office";
 
-interface Tool {
-  id: ToolId;
-  name: string;
-  desc: string;
-  action: string;
-  multi?: boolean;
-  accept: Accept;
-}
-
-interface ToolGroup { label: string; color: string; tools: Tool[] }
+interface Tool { id: ToolId; multi?: boolean; accept: Accept }
+interface ToolGroup { key: "organize" | "shrink" | "convert" | "protect" | "text"; color: string; tools: Tool[] }
 
 const GROUPS: ToolGroup[] = [
   {
-    label: "Organize",
-    color: "#c05b2a",
+    key: "organize", color: "#c05b2a",
     tools: [
-      { id: "merge", name: "Merge", desc: "Stack several PDFs into one file, in any order you like.", action: "Merge files", multi: true, accept: "pdf" },
-      { id: "rearrange", name: "Arrange", desc: "See every page. Drag to reorder, rotate, or toss the ones you don't need.", action: "Save new PDF", accept: "pdf" },
-      { id: "split", name: "Split", desc: "Break a PDF apart, page by page or by custom ranges.", action: "Split it", accept: "pdf" },
-      { id: "extract_pages", name: "Pick Pages", desc: "Keep only the pages you need as a fresh PDF.", action: "Extract pages", accept: "pdf" },
-      { id: "rotate", name: "Rotate", desc: "Turn the whole document, or just the sideways pages.", action: "Rotate", multi: true, accept: "pdf" },
+      { id: "merge", multi: true, accept: "pdf" },
+      { id: "rearrange", accept: "pdf" },
+      { id: "split", accept: "pdf" },
+      { id: "extract_pages", accept: "pdf" },
+      { id: "rotate", multi: true, accept: "pdf" },
+      { id: "page_numbers", multi: true, accept: "pdf" },
+    ],
+  },
+  { key: "shrink", color: "#6f7a2f", tools: [{ id: "compress", multi: true, accept: "pdf" }] },
+  {
+    key: "convert", color: "#2f7a6f",
+    tools: [
+      { id: "pdf2img", multi: true, accept: "pdf" },
+      { id: "img2pdf", multi: true, accept: "image" },
+      { id: "office2pdf", multi: true, accept: "office" },
+      { id: "pdf2docx", multi: true, accept: "pdf" },
     ],
   },
   {
-    label: "Shrink",
-    color: "#6f7a2f",
+    key: "protect", color: "#4a5a8f",
     tools: [
-      { id: "compress", name: "Compress", desc: "Squeeze the file size down. You decide how much.", action: "Compress", multi: true, accept: "pdf" },
+      { id: "protect", multi: true, accept: "pdf" },
+      { id: "unlock", multi: true, accept: "pdf" },
+      { id: "watermark", multi: true, accept: "pdf" },
     ],
   },
   {
-    label: "Convert",
-    color: "#2f7a6f",
+    key: "text", color: "#a0741f",
     tools: [
-      { id: "pdf2img", name: "PDF to Images", desc: "Render every page as a crisp PNG or JPG.", action: "Convert", multi: true, accept: "pdf" },
-      { id: "img2pdf", name: "Images to PDF", desc: "Turn photos and scans into a single tidy PDF.", action: "Build PDF", multi: true, accept: "image" },
-      { id: "office2pdf", name: "Office to PDF", desc: "Word, Excel and PowerPoint, out as clean PDFs.", action: "Convert", multi: true, accept: "office" },
-      { id: "pdf2docx", name: "PDF to Word", desc: "Turn a PDF back into an editable .docx document.", action: "Convert", multi: true, accept: "pdf" },
-    ],
-  },
-  {
-    label: "Protect",
-    color: "#4a5a8f",
-    tools: [
-      { id: "protect", name: "Lock", desc: "Add a password so only you can open it.", action: "Lock PDF", multi: true, accept: "pdf" },
-      { id: "unlock", name: "Unlock", desc: "Remove the password from your own PDF.", action: "Unlock", multi: true, accept: "pdf" },
-      { id: "watermark", name: "Watermark", desc: "Stamp a faint text across every page.", action: "Add watermark", multi: true, accept: "pdf" },
-    ],
-  },
-  {
-    label: "Text",
-    color: "#a0741f",
-    tools: [
-      { id: "ocr", name: "OCR", desc: "Make scanned pages searchable and copy friendly.", action: "Run OCR", multi: true, accept: "pdf" },
-      { id: "extract_text", name: "Extract Text", desc: "Pull all the text out into a .txt file.", action: "Extract", multi: true, accept: "pdf" },
+      { id: "ocr", multi: true, accept: "pdf" },
+      { id: "extract_text", multi: true, accept: "pdf" },
+      { id: "set_metadata", multi: true, accept: "pdf" },
     ],
   },
 ];
@@ -85,7 +71,7 @@ const EXT: Record<Accept, string[]> = {
 const FILTERS: Record<Accept, { name: string; extensions: string[] }[]> = {
   pdf: [{ name: "PDF", extensions: EXT.pdf }],
   image: [{ name: "Images", extensions: EXT.image }],
-  office: [{ name: "Office documents", extensions: EXT.office }],
+  office: [{ name: "Office", extensions: EXT.office }],
 };
 
 const dirOf = (p: string) => p.slice(0, Math.max(p.lastIndexOf("\\"), p.lastIndexOf("/")));
@@ -98,41 +84,33 @@ const extOf = (p: string) => nameOf(p).split(".").pop()?.toLowerCase() ?? "";
 const fmtSize = (b: number) =>
   b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(2)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
 
-const greeting = () => {
-  const h = new Date().getHours();
-  if (h < 5) return "Burning the midnight oil";
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
-};
-
 interface FileMeta { thumb?: string; pages?: number; size_bytes?: number; encrypted?: boolean }
 interface HistoryItem { toolId: ToolId; note: string; paths: string[]; when: number }
 interface Result { message: string; sub?: string; paths: string[] }
+interface Progress { done: number; total: number }
+interface PageItem { uid: number; pg: number; rot: number }
 
 const loadHistory = (): HistoryItem[] => {
   try { return JSON.parse(localStorage.getItem("mypdf.history") ?? "[]"); } catch { return []; }
 };
 
-interface Settings { ocrLang: string; outDir: string | null; name: string }
+interface Settings { ocrLang: string; outDir: string | null; name: string; lang: Lang }
 
-const APP_VERSION = "0.2.0";
+const APP_VERSION = "0.3.0";
 const REPO_URL = "https://github.com/fahmiridho07/mypdf";
+const CONCURRENCY = 3;
 
 const loadSettings = (): Settings => {
   try {
-    return { ocrLang: "ind+eng", outDir: null, name: "", ...JSON.parse(localStorage.getItem("mypdf.settings") ?? "{}") };
+    return { ocrLang: "ind+eng", outDir: null, name: "", lang: "en", ...JSON.parse(localStorage.getItem("mypdf.settings") ?? "{}") };
   } catch {
-    return { ocrLang: "ind+eng", outDir: null, name: "" };
+    return { ocrLang: "ind+eng", outDir: null, name: "", lang: "en" };
   }
 };
 
-interface Progress { done: number; total: number }
-
-// Tools that take one input file can also run as a batch, one file at a time.
 const BATCHABLE = new Set<ToolId>([
-  "compress", "rotate", "watermark", "protect", "unlock",
-  "pdf2img", "ocr", "extract_text", "office2pdf", "pdf2docx",
+  "compress", "rotate", "watermark", "protect", "unlock", "pdf2img",
+  "ocr", "extract_text", "office2pdf", "pdf2docx", "page_numbers", "set_metadata",
 ]);
 
 const CONFETTI = ["#c05b2a", "#6f7a2f", "#2f7a6f", "#4a5a8f", "#a0741f", "#e0a03f"];
@@ -141,15 +119,12 @@ function Confetti() {
   return (
     <div className="confetti" aria-hidden>
       {Array.from({ length: 26 }, (_, i) => (
-        <i
-          key={i}
-          style={{
-            left: `${(i * 137) % 100}%`,
-            background: CONFETTI[i % CONFETTI.length],
-            animationDelay: `${(i % 9) * 0.06}s`,
-            transform: `rotate(${(i * 47) % 360}deg)`,
-          }}
-        />
+        <i key={i} style={{
+          left: `${(i * 137) % 100}%`,
+          background: CONFETTI[i % CONFETTI.length],
+          animationDelay: `${(i % 9) * 0.06}s`,
+          transform: `rotate(${(i * 47) % 360}deg)`,
+        }} />
       ))}
     </div>
   );
@@ -181,19 +156,11 @@ function HeroArt() {
           <stop offset="1" stopColor="#f1ead9" />
         </linearGradient>
       </defs>
-
-      {/* backdrop blob and dots */}
       <path d="M28 96C18 56 58 18 116 14c58 4 102 26 100 70s-38 82-100 82C64 166 38 136 28 96z" fill="var(--accent-soft)" />
       <circle className="twinkle t1" cx="36" cy="48" r="4" fill="#6f7a2f" />
       <circle className="twinkle t3" cx="212" cy="126" r="5" fill="#4a5a8f" />
-
-      {/* shadow */}
       <ellipse cx="122" cy="158" rx="66" ry="9" fill="var(--ink)" opacity="0.10" />
-
-      {/* folder back panel */}
       <path d="M58 74q0 -10 10 -10h28l10 12h56q10 0 10 10v18H58z" fill="url(#hFolderBack)" />
-
-      {/* documents peeking out */}
       <g className="peek p1">
         <rect x="66" y="34" width="52" height="66" rx="6" fill="url(#hSheet)" stroke="var(--line)" transform="rotate(-12 92 67)" />
         <rect x="76" y="46" width="28" height="6" rx="3" fill="#2f7a6f" transform="rotate(-12 92 67)" />
@@ -212,14 +179,10 @@ function HeroArt() {
         <rect x="160" y="56" width="22" height="5" rx="2.5" fill="#a0741f" transform="rotate(15 173 71)" />
         <rect x="160" y="66" width="26" height="4" rx="2" fill="var(--ink-soft)" opacity="0.4" transform="rotate(15 173 71)" />
       </g>
-
-      {/* folder front pocket */}
       <path d="M50 96q-2 -8 6 -8h132q8 0 6 8l-10 52q-1.5 8 -9 8H70q-8 0 -9.5 -8z" fill="url(#hFolder)" />
       <path d="M50 96q-2 -8 6 -8h132q8 0 6 8l-1.6 8H51.6z" fill="#ffffff" opacity="0.12" />
       <circle cx="122" cy="124" r="11" fill="#ffffff" opacity="0.22" />
       <path d="M117 124l4 4 7 -8" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-
-      {/* sparkles */}
       <path className="twinkle t2" d="M206 40l2.6 6.4 6.4 2.6 -6.4 2.6 -2.6 6.4 -2.6 -6.4 -6.4 -2.6 6.4 -2.6z" fill="var(--accent)" />
       <path className="twinkle t1" d="M46 128l1.8 4.4 4.4 1.8 -4.4 1.8 -1.8 4.4 -1.8 -4.4 -4.4 -1.8 4.4 -1.8z" fill="#f2d06b" />
     </svg>
@@ -239,8 +202,6 @@ function DropArt() {
           <stop offset="1" stopColor="var(--g, #b4531f)" />
         </linearGradient>
       </defs>
-
-      {/* paper buddy */}
       <g className="drop-doc">
         <rect x="40" y="6" width="40" height="50" rx="7" fill="url(#dSheet)" stroke="var(--line)" />
         <path d="M68 6h5a7 7 0 017 7v5z" fill="var(--paper-sunken)" stroke="var(--line)" strokeLinejoin="round" />
@@ -252,24 +213,24 @@ function DropArt() {
         <circle cx="48" cy="32" r="2.5" fill="var(--g, #b4531f)" opacity="0.25" />
         <circle cx="72" cy="32" r="2.5" fill="var(--g, #b4531f)" opacity="0.25" />
       </g>
-
-      {/* motion hints */}
       <path className="twinkle t1" d="M28 22l1.6 3.9 3.9 1.6 -3.9 1.6 -1.6 3.9 -1.6 -3.9 -3.9 -1.6 3.9 -1.6z" fill="var(--g, #b4531f)" opacity="0.7" />
       <path className="twinkle t2" d="M92 40l1.4 3.4 3.4 1.4 -3.4 1.4 -1.4 3.4 -1.4 -3.4 -3.4 -1.4 3.4 -1.4z" fill="#f2d06b" />
-
-      {/* tray */}
       <path d="M22 66h76l-6 20q-1 5 -6 5H34q-5 0 -6 -5z" fill="url(#dTray)" />
       <path d="M22 66h76l-2 7H24z" fill="#fff" opacity="0.15" />
     </svg>
   );
 }
 
+let nextUid = 1;
+
 export default function App() {
   const [tool, setToolState] = useState<Tool | null>(null);
   const [files, setFiles] = useState<string[]>([]);
   const [meta, setMeta] = useState<Record<string, FileMeta>>({});
   const [busy, setBusy] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [result, setResult] = useState<Result | null>(null);
   const [doctor, setDoctor] = useState<Record<string, boolean> | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -282,13 +243,16 @@ export default function App() {
   const [welcomed, setWelcomed] = useState(() => localStorage.getItem("mypdf.welcomed") === "1");
   const [welcomeName, setWelcomeName] = useState("");
 
+  const s = STRINGS[settings.lang];
+
   // options
   const [splitMode, setSplitMode] = useState<"all" | "ranges">("all");
   const [ranges, setRanges] = useState("");
   const [pages, setPages] = useState("");
-  const [cmpMode, setCmpMode] = useState<"printer" | "ebook" | "screen" | "custom">("ebook");
+  const [cmpMode, setCmpMode] = useState<"printer" | "ebook" | "screen" | "target" | "custom">("ebook");
   const [cmpDpi, setCmpDpi] = useState(120);
   const [cmpQuality, setCmpQuality] = useState(70);
+  const [cmpTargetMB, setCmpTargetMB] = useState(2);
   const [angle, setAngle] = useState(90);
   const [wmText, setWmText] = useState("CONFIDENTIAL");
   const [wmOpacity, setWmOpacity] = useState(15);
@@ -296,16 +260,32 @@ export default function App() {
   const [dpi, setDpi] = useState(150);
   const [imgFormat, setImgFormat] = useState("png");
   const [ocrLang, setOcrLang] = useState(loadSettings().ocrLang);
+  const [pnPos, setPnPos] = useState("bottom-center");
+  const [pnFmt, setPnFmt] = useState("n");
+  const [pnSkip, setPnSkip] = useState(0);
+  const [mdTitle, setMdTitle] = useState("");
+  const [mdAuthor, setMdAuthor] = useState("");
+  const [mdSubject, setMdSubject] = useState("");
+  const [mdKeywords, setMdKeywords] = useState("");
 
-  // page organizer state
+  // page organizer
   const [pageThumbs, setPageThumbs] = useState<string[]>([]);
-  const [pageOrder, setPageOrder] = useState<number[]>([]);
-  const [pageRot, setPageRot] = useState<Record<number, number>>({});
+  const [pageItems, setPageItems] = useState<PageItem[]>([]);
+  const [pagesTotal, setPagesTotal] = useState(0);
   const [pagesLoading, setPagesLoading] = useState(false);
-  // Page reordering uses plain mouse events: Tauri's window level file drag
-  // handler swallows HTML5 drag events on Windows, so draggable="true" never
-  // fires inside the webview.
+  // Mouse based reordering: the window level file drop handler swallows
+  // HTML5 drag events on Windows.
   const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const undoStack = useRef<PageItem[][]>([]);
+
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
+  const settingsRef = useRef(showSettings);
+  settingsRef.current = showSettings;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  const pageItemsRef = useRef(pageItems);
+  pageItemsRef.current = pageItems;
 
   useEffect(() => {
     const up = () => setDragIdx(null);
@@ -317,25 +297,26 @@ export default function App() {
     };
   }, []);
 
-  const toolRef = useRef(tool);
-  toolRef.current = tool;
-  const settingsRef = useRef(showSettings);
-  settingsRef.current = showSettings;
-  const busyRef = useRef(busy);
-  busyRef.current = busy;
+  const snapshot = () => { undoStack.current = [...undoStack.current.slice(-49), pageItemsRef.current]; };
+  const undo = () => {
+    const prev = undoStack.current.pop();
+    if (prev) setPageItems(prev);
+  };
 
   const setTool = (t: Tool | null) => {
     setToolState(t);
     setShowSettings(false);
     setFiles([]);
     setError("");
+    setInfo("");
     setResult(null);
     setPages("");
     setPassword("");
     setDroppedLoose([]);
     setPageThumbs([]);
-    setPageOrder([]);
-    setPageRot({});
+    setPageItems([]);
+    setPagesTotal(0);
+    undoStack.current = [];
   };
 
   useEffect(() => {
@@ -349,6 +330,10 @@ export default function App() {
       if (e.key === "Escape" && !busyRef.current) {
         setShowSettings(false);
         setToolState(null);
+      }
+      if (e.key.toLowerCase() === "z" && e.ctrlKey && toolRef.current?.id === "rearrange") {
+        e.preventDefault();
+        undo();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -382,13 +367,14 @@ export default function App() {
   const loadPages = useCallback((path: string) => {
     setPagesLoading(true);
     setPageThumbs([]);
-    setPageOrder([]);
-    setPageRot({});
+    setPageItems([]);
     setProgress(null);
+    undoStack.current = [];
     invoke<{ thumbs: string[]; pages: number }>("run_engine", { task: "page_thumbs", params: { input: path } })
       .then((r) => {
         setPageThumbs(r.thumbs);
-        setPageOrder(r.thumbs.map((_, i) => i));
+        setPagesTotal(r.thumbs.length);
+        setPageItems(r.thumbs.map((_, i) => ({ uid: nextUid++, pg: i, rot: 0 })));
       })
       .catch((e) => setError(String(e)))
       .finally(() => { setPagesLoading(false); setProgress(null); });
@@ -400,6 +386,7 @@ export default function App() {
     setFiles((prev) => (t.multi ? [...prev, ...valid.filter((v) => !prev.includes(v))] : [valid[0]]));
     setResult(null);
     setError("");
+    setInfo("");
     fetchMeta(valid);
     if (t.id === "rearrange") loadPages(valid[0]);
   }, [fetchMeta, loadPages]);
@@ -442,128 +429,146 @@ export default function App() {
   };
 
   const pushHistory = (item: HistoryItem) => {
-    const next = [item, ...history].slice(0, 30);
+    const next = [{ ...item, paths: item.paths.slice(0, 5) }, ...history].slice(0, 30);
     setHistory(next);
     localStorage.setItem("mypdf.history", JSON.stringify(next));
   };
 
   const paramsFor = (input: string): Record<string, unknown> => {
     if (!tool) return {};
-    let params: Record<string, unknown> = {};
     switch (tool.id) {
-        case "merge":
-          params = { inputs: files, output: outFor(input, "merged") };
-          break;
-        case "split":
-          params = {
-            input, output_dir: `${outBase(input)}\\${stemOf(input)}_split`, mode: splitMode,
-            ...(splitMode === "ranges" ? { ranges: ranges.split(";").map((s) => s.trim()).filter(Boolean) } : {}),
-          };
-          break;
-        case "extract_pages":
-          params = { input, pages, output: outFor(input, "pages") };
-          break;
-        case "compress":
-          params = cmpMode === "custom"
-            ? { input, mode: "custom", dpi: cmpDpi, quality: cmpQuality, output: outFor(input, "compressed") }
-            : { input, level: cmpMode, output: outFor(input, "compressed") };
-          break;
-        case "rotate":
-          params = { input, angle, pages: pages || undefined, output: outFor(input, "rotated") };
-          break;
-        case "watermark":
-          params = { input, text: wmText, opacity: wmOpacity / 100, output: outFor(input, "watermarked") };
-          break;
-        case "protect":
-          params = { input, password, output: outFor(input, "locked") };
-          break;
-        case "unlock":
-          params = { input, password, output: outFor(input, "unlocked") };
-          break;
-        case "pdf2img":
-          params = { input, dpi, format: imgFormat, output_dir: `${outBase(input)}\\${stemOf(input)}_images` };
-          break;
-        case "img2pdf":
-          params = { inputs: files, output: outFor(input, "document") };
-          break;
-        case "office2pdf":
-          params = { input, output: `${outBase(input)}\\${stemOf(input)}.pdf` };
-          break;
-        case "pdf2docx":
-          params = { input, output: `${outBase(input)}\\${stemOf(input)}.docx` };
-          break;
-        case "ocr":
-          params = { input, lang: ocrLang, output: outFor(input, "ocr") };
-          break;
-        case "extract_text":
-          params = { input, output: outFor(input, "text", "txt") };
-          break;
-        case "rearrange":
-          params = {
-            input, order: pageOrder,
-            rotations: Object.fromEntries(Object.entries(pageRot).filter(([, v]) => v !== 0)),
-            output: outFor(input, "arranged"),
-          };
-          break;
-      }
-    return params;
+      case "merge":
+        return { inputs: files, output: outFor(input, "merged") };
+      case "split":
+        return {
+          input, output_dir: `${outBase(input)}\\${stemOf(input)}_split`, mode: splitMode,
+          ...(splitMode === "ranges" ? { ranges: ranges.split(";").map((x) => x.trim()).filter(Boolean) } : {}),
+        };
+      case "extract_pages":
+        return { input, pages, output: outFor(input, "pages") };
+      case "compress":
+        if (cmpMode === "custom") return { input, mode: "custom", dpi: cmpDpi, quality: cmpQuality, output: outFor(input, "compressed") };
+        if (cmpMode === "target") return { input, mode: "target", target_bytes: Math.round(cmpTargetMB * 1024 * 1024), output: outFor(input, "compressed") };
+        return { input, level: cmpMode, output: outFor(input, "compressed") };
+      case "rotate":
+        return { input, angle, pages: pages || undefined, output: outFor(input, "rotated") };
+      case "page_numbers":
+        return { input, position: pnPos, fmt: pnFmt, skip: pnSkip, output: outFor(input, "numbered") };
+      case "watermark":
+        return { input, text: wmText, opacity: wmOpacity / 100, output: outFor(input, "watermarked") };
+      case "protect":
+        return { input, password, output: outFor(input, "locked") };
+      case "unlock":
+        return { input, password, output: outFor(input, "unlocked") };
+      case "pdf2img":
+        return { input, dpi, format: imgFormat, output_dir: `${outBase(input)}\\${stemOf(input)}_images` };
+      case "img2pdf":
+        return { inputs: files, output: outFor(input, "document") };
+      case "office2pdf":
+        return { input, output: `${outBase(input)}\\${stemOf(input)}.pdf` };
+      case "pdf2docx":
+        return { input, output: `${outBase(input)}\\${stemOf(input)}.docx` };
+      case "ocr":
+        return { input, lang: ocrLang, output: outFor(input, "ocr") };
+      case "extract_text":
+        return { input, output: outFor(input, "text", "txt") };
+      case "set_metadata":
+        return {
+          input, output: outFor(input, "metadata"),
+          ...(mdTitle.trim() ? { title: mdTitle.trim() } : {}),
+          ...(mdAuthor.trim() ? { author: mdAuthor.trim() } : {}),
+          ...(mdSubject.trim() ? { subject: mdSubject.trim() } : {}),
+          ...(mdKeywords.trim() ? { keywords: mdKeywords.trim() } : {}),
+        };
+      case "rearrange":
+        return {
+          input,
+          order: pageItems.map((x) => x.pg),
+          rotations: pageItems.map((x) => x.rot),
+          output: outFor(input, "arranged"),
+        };
+    }
+  };
+
+  const cancelRun = () => {
+    setCancelling(true);
+    invoke("cancel_engine").catch(() => {});
   };
 
   const runTask = async () => {
     if (!tool || files.length === 0) return;
     setBusy(true);
+    setCancelling(false);
     setError("");
+    setInfo("");
     setResult(null);
     setProgress(null);
     const targets = BATCHABLE.has(tool.id) ? files : [files[0]];
+    const parallel = targets.length > 1;
     const allPaths: string[] = [];
     const failures: string[] = [];
     let sumBefore = 0;
     let sumAfter = 0;
+    let metAll = true;
+    let wasCancelled = false;
+    let completed = 0;
     try {
-      for (let i = 0; i < targets.length; i++) {
-        setBatch(targets.length > 1 ? { i: i + 1, n: targets.length } : null);
-        setProgress(null);
-        try {
-          const res = await invoke<Record<string, any>>("run_engine", {
-            task: tool.id, params: paramsFor(targets[i]),
-          });
-          allPaths.push(...(res.outputs ?? (res.output ? [res.output] : [])));
-          if (res.before) sumBefore += res.before;
-          if (res.after) sumAfter += res.after;
-        } catch (e) {
-          failures.push(`${nameOf(targets[i])}: ${e}`);
+      const queue = targets.map((f, i) => [i, f] as const);
+      const worker = async () => {
+        while (queue.length > 0 && !wasCancelled) {
+          const [, f] = queue.shift()!;
+          try {
+            const res = await invoke<Record<string, any>>("run_engine", {
+              task: tool.id, params: paramsFor(f),
+            });
+            allPaths.push(...(res.outputs ?? (res.output ? [res.output] : [])));
+            if (res.before) sumBefore += res.before;
+            if (res.after) sumAfter += res.after;
+            if (res.met_target === false) metAll = false;
+          } catch (e) {
+            const msg = String(e);
+            if (msg.includes("cancelled")) { wasCancelled = true; }
+            else failures.push(`${nameOf(f)}: ${msg}`);
+          }
+          completed += 1;
+          if (parallel) setBatch({ i: completed, n: targets.length });
         }
+      };
+      if (parallel) setBatch({ i: 0, n: targets.length });
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
+
+      if (wasCancelled) {
+        setInfo(s.cancelledNote);
       }
-      let message = "Done!";
+      let message = s.done;
       let sub: string | undefined;
-      if (tool.id === "compress" && sumBefore > 0 && sumAfter > 0) {
-        const pct = (100 * (1 - sumAfter / sumBefore)).toFixed(1);
-        message = `Done! ${pct}% smaller`;
-        sub = `${fmtSize(sumBefore)} down to ${fmtSize(sumAfter)}`;
+      if (tool.id === "compress" && cmpMode === "target" && sumBefore > 0) {
+        message = metAll ? s.fitsUnder(String(cmpTargetMB)) : s.closestGot;
+        sub = s.downTo(fmtSize(sumBefore), fmtSize(sumAfter));
+      } else if (tool.id === "compress" && sumBefore > 0 && sumAfter > 0) {
+        const pctSaved = (100 * (1 - sumAfter / sumBefore)).toFixed(1);
+        message = s.doneSmaller(pctSaved);
+        sub = s.downTo(fmtSize(sumBefore), fmtSize(sumAfter));
       } else if (allPaths.length > 1) {
-        message = `Done! ${allPaths.length} files created`;
-        sub = `Saved in ${dirOf(allPaths[0])}`;
+        message = s.filesCreated(allPaths.length);
+        sub = s.savedIn(dirOf(allPaths[0]));
       } else if (allPaths.length === 1) {
-        sub = `Saved as ${nameOf(allPaths[0])}`;
+        sub = s.savedAs(nameOf(allPaths[0]));
       }
       if (failures.length > 0) {
-        setError(
-          (allPaths.length > 0 ? `${failures.length} of ${targets.length} files failed:\n` : "") +
-          failures.join("\n"));
+        setError((allPaths.length > 0 ? s.someFailed(failures.length, targets.length) + "\n" : "") + failures.join("\n"));
       }
       if (allPaths.length > 0) {
         setResult({ message, sub, paths: allPaths });
         pushHistory({
           toolId: tool.id,
-          note: allPaths.length > 1
-            ? `${nameOf(targets[0])} (${allPaths.length} files)`
-            : nameOf(allPaths[0] ?? targets[0]),
+          note: allPaths.length > 1 ? `${nameOf(targets[0])} (${allPaths.length})` : nameOf(allPaths[0] ?? targets[0]),
           paths: allPaths, when: Date.now(),
         });
       }
     } finally {
       setBusy(false);
+      setCancelling(false);
       setProgress(null);
       setBatch(null);
     }
@@ -583,7 +588,7 @@ export default function App() {
     (tool?.id !== "protect" || password.length > 0) &&
     (tool?.id !== "extract_pages" || pages.trim().length > 0) &&
     (tool?.id !== "split" || splitMode === "all" || ranges.trim().length > 0) &&
-    (tool?.id !== "rearrange" || pageOrder.length > 0);
+    (tool?.id !== "rearrange" || pageItems.length > 0);
 
   const looseExt = droppedLoose.length > 0 ? extOf(droppedLoose[0]) : "";
   const looseAccept: Accept | "" =
@@ -591,13 +596,32 @@ export default function App() {
 
   const quickPicks = ALL_TOOLS.filter((t) => ["merge", "compress", "rearrange"].includes(t.id));
 
-  const pct = progress && progress.total > 0
+  const pct = progress && progress.total > 0 && !batch
     ? Math.min(100, Math.round((100 * progress.done) / progress.total))
     : null;
 
   const pickOutDir = async () => {
     const dir = await open({ directory: true });
     if (typeof dir === "string") saveSettings({ ...settings, outDir: dir });
+  };
+
+  const greeting = () => {
+    const h = new Date().getHours();
+    if (h < 5) return s.gNight;
+    if (h < 12) return s.gMorning;
+    if (h < 18) return s.gAfternoon;
+    return s.gEvening;
+  };
+
+  const movePage = (pos: number, dir: -1 | 1) => {
+    const j = pos + dir;
+    if (j < 0 || j >= pageItems.length) return;
+    snapshot();
+    setPageItems((o) => {
+      const n = [...o];
+      [n[pos], n[j]] = [n[j], n[pos]];
+      return n;
+    });
   };
 
   return (
@@ -627,31 +651,24 @@ export default function App() {
         </button>
         <nav>
           {GROUPS.map((g) => (
-            <div className="nav-group" key={g.label} style={{ "--g": g.color } as React.CSSProperties}>
-              <span className="nav-label">{g.label}</span>
+            <div className="nav-group" key={g.key} style={{ "--g": g.color } as React.CSSProperties}>
+              <span className="nav-label">{s.groups[g.key]}</span>
               {g.tools.map((t) => (
-                <button
-                  key={t.id}
-                  className={`nav-item${tool?.id === t.id ? " active" : ""}`}
-                  onClick={() => setTool(t)}
-                >
+                <button key={t.id} className={`nav-item${tool?.id === t.id ? " active" : ""}`} onClick={() => setTool(t)}>
                   <span className="nav-icon"><Icon id={t.id} size={17} /></span>
-                  {t.name}
-                  {missingFor(t) && <span className="nav-dot" title="Needs an extra install" />}
+                  {s.tools[t.id].name}
+                  {missingFor(t) && <span className="nav-dot" title={s.needsExtra} />}
                 </button>
               ))}
             </div>
           ))}
         </nav>
         <footer className="sidebar-foot">
-          <button
-            className={`nav-item${showSettings ? " active" : ""}`}
-            onClick={() => { setTool(null); setShowSettings(true); }}
-          >
+          <button className={`nav-item${showSettings ? " active" : ""}`} onClick={() => { setTool(null); setShowSettings(true); }}>
             <span className="nav-icon"><Icon id="settings" size={17} /></span>
-            Settings
+            {s.settings}
           </button>
-          <span className="lock-note"><Icon id="shield" size={14} /> 100% offline. Files never leave this laptop.</span>
+          <span className="lock-note"><Icon id="shield" size={14} /> {s.offlineNote}</span>
         </footer>
       </aside>
 
@@ -661,54 +678,52 @@ export default function App() {
             <header className="ws-head">
               <span className="ws-badge settings-badge"><Icon id="settings" size={26} /></span>
               <div>
-                <h1>Settings</h1>
-                <p>Small preferences, stored on this machine only.</p>
+                <h1>{s.settings}</h1>
+                <p>{s.settingsSub}</p>
               </div>
             </header>
 
             <div className="options panelbox">
-              <span className="setting-label">Your name</span>
-              <label>Used only for the greeting on the home screen.
-                <input
-                  value={settings.name}
-                  onChange={(e) => saveSettings({ ...settings, name: e.target.value })}
-                  placeholder="leave empty for no name"
-                  maxLength={30}
-                />
-              </label>
-
-              <span className="setting-label">Default OCR language</span>
+              <span className="setting-label">{s.language}</span>
               <div className="chips">
-                {([["ind+eng", "Indonesian + English"], ["ind", "Indonesian"], ["eng", "English"]] as const).map(([v, l]) => (
-                  <button key={v} className={`chip${settings.ocrLang === v ? " on" : ""}`}
-                    onClick={() => { saveSettings({ ...settings, ocrLang: v }); setOcrLang(v); }}>
-                    {l}
-                  </button>
+                {([["en", "English"], ["id", "Bahasa Indonesia"]] as const).map(([v, l]) => (
+                  <button key={v} className={`chip${settings.lang === v ? " on" : ""}`}
+                    onClick={() => saveSettings({ ...settings, lang: v })}>{l}</button>
                 ))}
               </div>
 
-              <span className="setting-label">Where results are saved</span>
+              <span className="setting-label">{s.yourName}</span>
+              <label>{s.nameHint}
+                <input value={settings.name} maxLength={30}
+                  onChange={(e) => saveSettings({ ...settings, name: e.target.value })}
+                  placeholder={s.namePlaceholder} />
+              </label>
+
+              <span className="setting-label">{s.ocrDefault}</span>
+              <div className="chips">
+                {([["ind+eng", s.langBoth], ["ind", s.langInd], ["eng", s.langEng]] as const).map(([v, l]) => (
+                  <button key={v} className={`chip${settings.ocrLang === v ? " on" : ""}`}
+                    onClick={() => { saveSettings({ ...settings, ocrLang: v }); setOcrLang(v); }}>{l}</button>
+                ))}
+              </div>
+
+              <span className="setting-label">{s.whereSaved}</span>
               <div className="chips">
                 <button className={`chip${!settings.outDir ? " on" : ""}`}
-                  onClick={() => saveSettings({ ...settings, outDir: null })}>
-                  Next to the original file
-                </button>
-                <button className={`chip${settings.outDir ? " on" : ""}`} onClick={pickOutDir}>
-                  One folder for everything
-                </button>
+                  onClick={() => saveSettings({ ...settings, outDir: null })}>{s.nextToOriginal}</button>
+                <button className={`chip${settings.outDir ? " on" : ""}`} onClick={pickOutDir}>{s.oneFolder}</button>
               </div>
               {settings.outDir && (
                 <p className="option-hint">
-                  Saving everything to <b>{settings.outDir}</b>{" "}
-                  <button className="link" onClick={pickOutDir}>Change folder</button>
+                  {s.savingTo} <b>{settings.outDir}</b>{" "}
+                  <button className="link" onClick={pickOutDir}>{s.changeFolder}</button>
                 </p>
               )}
 
-              <span className="setting-label">About</span>
+              <span className="setting-label">{s.about}</span>
               <p className="option-hint">
-                MyPDF {APP_VERSION}, free and open source under AGPL 3.0.
-                Everything runs on this computer; the app makes no network requests.{" "}
-                <button className="link" onClick={() => openUrl(REPO_URL).catch(() => {})}>Source code on GitHub</button>
+                {s.aboutText(APP_VERSION)}{" "}
+                <button className="link" onClick={() => openUrl(REPO_URL).catch(() => {})}>{s.sourceCode}</button>
               </p>
             </div>
           </div>
@@ -719,29 +734,26 @@ export default function App() {
                 <span className="hello">
                   {settings.name ? `${greeting()}, ${settings.name} 👋` : `${greeting()} 👋`}
                 </span>
-                <h1>Every PDF chore,<br />handled right here.</h1>
-                <p>Pick a tool on the left, or just drag files anywhere onto this window.</p>
+                <h1>{s.heroTitle1}<br />{s.heroTitle2}</h1>
+                <p>{s.heroSub}</p>
               </div>
               <HeroArt />
             </div>
 
             {!welcomed && (
               <div className="welcome">
-                <h2>Welcome in! Three things worth knowing:</h2>
+                <h2>{s.welcomeTitle}</h2>
                 <ul>
-                  <li><b>Everything stays on this computer.</b> No uploads, no accounts, no limits.</li>
-                  <li><b>Drag files anywhere</b> onto this window and MyPDF will ask what to do with them.</li>
-                  <li><b>Some tools use free helpers.</b> Compression, OCR and Office conversion get stronger when Ghostscript, Tesseract or LibreOffice are installed. The app will point you there when needed.</li>
+                  <li><b>{s.w1b}</b> {s.w1}</li>
+                  <li><b>{s.w2b}</b> {s.w2}</li>
+                  <li><b>{s.w3b}</b> {s.w3}</li>
                 </ul>
                 <div className="welcome-row">
-                  <input
-                    value={welcomeName}
+                  <input value={welcomeName} maxLength={30}
                     onChange={(e) => setWelcomeName(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") finishWelcome(); }}
-                    placeholder="What should we call you? (optional)"
-                    maxLength={30}
-                  />
-                  <button className="welcome-go" onClick={finishWelcome}>Let's go</button>
+                    placeholder={s.welcomePlaceholder} />
+                  <button className="welcome-go" onClick={finishWelcome}>{s.welcomeGo}</button>
                 </div>
               </div>
             )}
@@ -751,8 +763,8 @@ export default function App() {
             {droppedLoose.length > 0 && looseAccept && (
               <div className="loose">
                 <div className="loose-head">
-                  <strong>{droppedLoose.length} file{droppedLoose.length > 1 ? "s" : ""} ready.</strong> What should we do with them?
-                  <button className="link" onClick={() => setDroppedLoose([])}>Never mind</button>
+                  <strong>{s.filesReady(droppedLoose.length)}</strong> {s.whatToDo}
+                  <button className="link" onClick={() => setDroppedLoose([])}>{s.neverMind}</button>
                 </div>
                 <div className="loose-actions">
                   {ALL_TOOLS.filter((t) => t.accept === looseAccept && !missingFor(t)).map((t) => (
@@ -762,7 +774,7 @@ export default function App() {
                         setTool(t);
                         addFiles(picked, t);
                       }}>
-                      <Icon id={t.id} size={14} /> {t.name}
+                      <Icon id={t.id} size={14} /> {s.tools[t.id].name}
                     </button>
                   ))}
                 </div>
@@ -774,9 +786,9 @@ export default function App() {
                 <button key={t.id} className="quick-card" style={{ "--g": colorOf(t.id), animationDelay: `${i * 70}ms` } as React.CSSProperties}
                   onClick={() => setTool(t)}>
                   <span className="quick-icon"><Icon id={t.id} size={24} /></span>
-                  <span className="quick-name">{t.name}</span>
-                  <span className="quick-desc">{t.desc}</span>
-                  <span className="quick-go">Open →</span>
+                  <span className="quick-name">{s.tools[t.id].name}</span>
+                  <span className="quick-desc">{s.tools[t.id].desc}</span>
+                  <span className="quick-go">{s.open}</span>
                 </button>
               ))}
             </div>
@@ -784,9 +796,9 @@ export default function App() {
             {history.length > 0 && (
               <section className="history">
                 <div className="history-head">
-                  <h2>Recent work</h2>
+                  <h2>{s.recentWork}</h2>
                   <button className="link" onClick={() => { setHistory([]); localStorage.removeItem("mypdf.history"); }}>
-                    Clear
+                    {s.clear}
                   </button>
                 </div>
                 <ul>
@@ -798,12 +810,11 @@ export default function App() {
                           {t && <Icon id={t.id} size={14} />}
                         </span>
                         <span className="history-note" title={h.paths[0]}>{h.note}</span>
-                        <span className="history-tool">{t?.name}</span>
+                        <span className="history-tool">{t ? s.tools[t.id].name : ""}</span>
                         {h.paths[0] && (
                           <button className="mini"
-                            onClick={() => revealItemInDir(h.paths[0]).catch(() =>
-                              setError(`${nameOf(h.paths[0])} is no longer there. It may have been moved or deleted.`))}>
-                            Show in folder
+                            onClick={() => revealItemInDir(h.paths[0]).catch(() => setError(s.fileGone(nameOf(h.paths[0]))))}>
+                            {s.showInFolder}
                           </button>
                         )}
                       </li>
@@ -813,35 +824,27 @@ export default function App() {
               </section>
             )}
 
-            {doctor != null && !doctor.ghostscript && (
-              <p className="notice">
-                Ghostscript is not installed yet, so compression will be mild.
-                Grab it from ghostscript.com and reopen the app for full power.
-              </p>
-            )}
+            {doctor != null && !doctor.ghostscript && <p className="notice">{s.gsNotice}</p>}
           </div>
         ) : (
           <div className="workspace" key={tool.id} style={{ "--g": colorOf(tool.id) } as React.CSSProperties}>
             <header className="ws-head">
               <span className="ws-badge"><Icon id={tool.id} size={26} /></span>
               <div>
-                <h1>{tool.name}</h1>
-                <p>{tool.desc}</p>
+                <h1>{s.tools[tool.id].name}</h1>
+                <p>{s.tools[tool.id].desc}</p>
               </div>
             </header>
 
             {missingFor(tool) && (
               <div className="notice">
                 {tool.id === "ocr" ? (
-                  <>This tool needs two free helpers that are not installed yet:
-                    Tesseract (<code>winget install UB-Mannheim.TesseractOCR</code>) and
-                    ocrmypdf (<code>pip install ocrmypdf</code>). Install them, then reopen MyPDF.</>
+                  <>{s.missingOcr} <code>winget install UB-Mannheim.TesseractOCR</code>
+                    {" + "}<code>pip install ocrmypdf</code>. {s.thenReopen}</>
                 ) : tool.id === "pdf2docx" ? (
-                  <>This tool needs one free helper that is not installed yet:
-                    <code>pip install pdf2docx</code>. Install it, then reopen MyPDF.</>
+                  <>{s.missingOne} <code>pip install pdf2docx</code>. {s.thenReopen}</>
                 ) : (
-                  <>This tool needs LibreOffice, which is not installed yet:
-                    <code>winget install TheDocumentFoundation.LibreOffice</code>. Install it, then reopen MyPDF.</>
+                  <>{s.missingLibre} <code>winget install TheDocumentFoundation.LibreOffice</code>. {s.thenReopen}</>
                 )}
               </div>
             )}
@@ -850,11 +853,11 @@ export default function App() {
               {files.length === 0 ? (
                 <>
                   <DropArt />
-                  <span className="dz-title">Drop files here</span>
-                  <span className="dz-sub">or click to browse your folders</span>
+                  <span className="dz-title">{s.dropTitle}</span>
+                  <span className="dz-sub">{s.dropSub}</span>
                 </>
               ) : (
-                <span className="dz-title">{tool.multi ? "+ Add more files" : "Swap file"}</span>
+                <span className="dz-title">{tool.multi ? s.addMore : s.swapFile}</span>
               )}
             </button>
 
@@ -870,19 +873,19 @@ export default function App() {
                       <span className="file-body">
                         <span className="file-name" title={f}>{nameOf(f)}</span>
                         <span className="file-meta">
-                          {m?.pages ? `${m.pages} page${m.pages > 1 ? "s" : ""}` : ""}
+                          {m?.pages ? s.pages(m.pages) : ""}
                           {m?.pages && m?.size_bytes ? " · " : ""}
                           {m?.size_bytes ? fmtSize(m.size_bytes) : ""}
-                          {m?.encrypted ? " · password locked" : ""}
+                          {m?.encrypted ? ` · ${s.lockedMeta}` : ""}
                         </span>
                       </span>
                       {tool.multi && (
                         <span className="file-ops">
-                          <button onClick={() => moveFile(i, -1)} disabled={i === 0} title="Move up">↑</button>
-                          <button onClick={() => moveFile(i, 1)} disabled={i === files.length - 1} title="Move down">↓</button>
+                          <button onClick={() => moveFile(i, -1)} disabled={i === 0} title={s.moveUp} aria-label={s.moveUp}>↑</button>
+                          <button onClick={() => moveFile(i, 1)} disabled={i === files.length - 1} title={s.moveDown} aria-label={s.moveDown}>↓</button>
                         </span>
                       )}
-                      <button className="file-x" onClick={() => setFiles(files.filter((_, j) => j !== i))} title="Remove">✕</button>
+                      <button className="file-x" onClick={() => setFiles(files.filter((_, j) => j !== i))} title={s.remove} aria-label={s.remove}>✕</button>
                     </li>
                   );
                 })}
@@ -892,27 +895,28 @@ export default function App() {
             {tool.id === "rearrange" && files.length > 0 && (
               pagesLoading ? (
                 <div className="pages-loading">
-                  <span className="spinner tinted" /> Rendering pages…{pct != null ? ` ${pct}%` : ""}
+                  <span className="spinner tinted" /> {s.renderingPages}{pct != null ? ` ${pct}%` : ""}
                 </div>
-              ) : pageThumbs.length > 0 ? (
+              ) : pageItems.length > 0 || pagesTotal > 0 ? (
                 <>
                   <p className="option-hint">
-                    Drag pages to reorder. Use ↻ to rotate and ✕ to remove.
-                    Keeping {pageOrder.length} of {pageThumbs.length} pages.
+                    {s.arrangeHint} {s.keeping(pageItems.length, pagesTotal)}
                   </p>
                   <div className="pages">
-                    {pageOrder.map((pg, pos) => (
+                    {pageItems.map((item, pos) => (
                       <div
-                        key={pg}
+                        key={item.uid}
+                        tabIndex={0}
                         className={`page-card${dragIdx === pos ? " dragging" : ""}`}
                         onMouseDown={(e) => {
                           if ((e.target as HTMLElement).closest("button")) return;
                           e.preventDefault();
+                          snapshot();
                           setDragIdx(pos);
                         }}
                         onMouseEnter={() => {
                           if (dragIdx === null || dragIdx === pos) return;
-                          setPageOrder((o) => {
+                          setPageItems((o) => {
                             const n = [...o];
                             const [moved] = n.splice(dragIdx, 1);
                             n.splice(pos, 0, moved);
@@ -920,20 +924,40 @@ export default function App() {
                           });
                           setDragIdx(pos);
                         }}
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowLeft") { e.preventDefault(); movePage(pos, -1); }
+                          else if (e.key === "ArrowRight") { e.preventDefault(); movePage(pos, 1); }
+                          else if (e.key === "Delete" || e.key === "Backspace") {
+                            snapshot();
+                            setPageItems((o) => o.filter((_, j) => j !== pos));
+                          } else if (e.key.toLowerCase() === "r" && !e.ctrlKey) {
+                            snapshot();
+                            setPageItems((o) => o.map((x, j) => j === pos ? { ...x, rot: (x.rot + 90) % 360 } : x));
+                          }
+                        }}
                       >
-                        <img src={pageThumbs[pg]} alt="" draggable={false}
-                          style={{ transform: `rotate(${pageRot[pg] ?? 0}deg)` }} />
-                        <span className="page-num">{pg + 1}</span>
+                        <img src={pageThumbs[item.pg]} alt="" draggable={false}
+                          style={{ transform: `rotate(${item.rot}deg)` }} />
+                        <span className="page-num">{item.pg + 1}</span>
                         <span className="page-tools">
-                          <button title="Rotate" onClick={() => setPageRot((r) => ({ ...r, [pg]: ((r[pg] ?? 0) + 90) % 360 }))}>↻</button>
-                          <button title="Remove" onClick={() => setPageOrder((o) => o.filter((x) => x !== pg))}>✕</button>
+                          <button title={s.rotatePage} aria-label={s.rotatePage}
+                            onClick={() => { snapshot(); setPageItems((o) => o.map((x, j) => j === pos ? { ...x, rot: (x.rot + 90) % 360 } : x)); }}>↻</button>
+                          <button title={s.duplicatePage} aria-label={s.duplicatePage}
+                            onClick={() => { snapshot(); setPageItems((o) => { const n = [...o]; n.splice(pos + 1, 0, { uid: nextUid++, pg: item.pg, rot: item.rot }); return n; }); }}>⧉</button>
+                          <button title={s.remove} aria-label={s.remove}
+                            onClick={() => { snapshot(); setPageItems((o) => o.filter((_, j) => j !== pos)); }}>✕</button>
                         </span>
                       </div>
                     ))}
                   </div>
-                  {pageOrder.length < pageThumbs.length && (
-                    <button className="link left" onClick={() => { setPageOrder(pageThumbs.map((_, i) => i)); }}>
-                      Bring back the removed pages
+                  {pageItems.length < pagesTotal && (
+                    <button className="link left" onClick={() => {
+                      snapshot();
+                      const have = new Set(pageItems.map((x) => x.pg));
+                      const missing = Array.from({ length: pagesTotal }, (_, i) => i).filter((i) => !have.has(i));
+                      setPageItems((o) => [...o, ...missing.map((pg) => ({ uid: nextUid++, pg, rot: 0 }))]);
+                    }}>
+                      {s.bringBack}
                     </button>
                   )}
                 </>
@@ -944,45 +968,52 @@ export default function App() {
               {tool.id === "split" && (
                 <>
                   <div className="chips">
-                    <button className={`chip${splitMode === "all" ? " on" : ""}`} onClick={() => setSplitMode("all")}>Every page</button>
-                    <button className={`chip${splitMode === "ranges" ? " on" : ""}`} onClick={() => setSplitMode("ranges")}>Custom ranges</button>
+                    <button className={`chip${splitMode === "all" ? " on" : ""}`} onClick={() => setSplitMode("all")}>{s.everyPage}</button>
+                    <button className={`chip${splitMode === "ranges" ? " on" : ""}`} onClick={() => setSplitMode("ranges")}>{s.customRanges}</button>
                   </div>
                   {splitMode === "ranges" && (
-                    <label>Page ranges, separated by semicolons
-                      <input value={ranges} onChange={(e) => setRanges(e.target.value)} placeholder="e.g. 1:3; 4:10" />
+                    <label>{s.rangesLabel}
+                      <input value={ranges} onChange={(e) => setRanges(e.target.value)} placeholder={s.rangesPh} />
                     </label>
                   )}
                 </>
               )}
 
               {tool.id === "extract_pages" && (
-                <label>Pages to keep
-                  <input value={pages} onChange={(e) => setPages(e.target.value)} placeholder="e.g. 1,3,5 or 2:8" />
+                <label>{s.pagesToKeep}
+                  <input value={pages} onChange={(e) => setPages(e.target.value)} placeholder={s.pagesPh} />
                 </label>
               )}
 
               {tool.id === "compress" && (
                 <>
                   <div className="chips">
-                    {([["printer", "Gentle"], ["ebook", "Balanced"], ["screen", "Tiny"], ["custom", "My rules"]] as const).map(([v, l]) => (
+                    {([["printer", s.cGentle], ["ebook", s.cBalanced], ["screen", s.cTiny], ["target", s.cFit], ["custom", s.cCustom]] as const).map(([v, l]) => (
                       <button key={v} className={`chip${cmpMode === v ? " on" : ""}`} onClick={() => setCmpMode(v)}>{l}</button>
                     ))}
                   </div>
                   <p className="option-hint">
-                    {cmpMode === "printer" && "Images at 300 dpi. Barely touched, modest savings."}
-                    {cmpMode === "ebook" && "Images at 150 dpi. The safe pick for sharing and archiving."}
-                    {cmpMode === "screen" && "Images at 72 dpi. Smallest output, great for email attachments."}
-                    {cmpMode === "custom" && "Full control. Slide until the tradeoff feels right."}
+                    {cmpMode === "printer" && s.cGentleHint}
+                    {cmpMode === "ebook" && s.cBalancedHint}
+                    {cmpMode === "screen" && s.cTinyHint}
+                    {cmpMode === "target" && s.cFitHint}
+                    {cmpMode === "custom" && s.cCustomHint}
                   </p>
+                  {cmpMode === "target" && (
+                    <label>{s.targetLabel}
+                      <input type="number" min={0.1} step={0.1} value={cmpTargetMB}
+                        onChange={(e) => setCmpTargetMB(Math.max(0.1, Number(e.target.value) || 2))} />
+                    </label>
+                  )}
                   {cmpMode === "custom" && (
                     <div className="sliders">
-                      <label>Image resolution <b>{cmpDpi} dpi</b>
+                      <label>{s.imageRes} <b>{cmpDpi} dpi</b>
                         <input type="range" min={50} max={300} step={10} value={cmpDpi} onChange={(e) => setCmpDpi(Number(e.target.value))} />
-                        <span className="slider-ends"><i>smaller file</i><i>sharper image</i></span>
+                        <span className="slider-ends"><i>{s.smallerFile}</i><i>{s.sharper}</i></span>
                       </label>
-                      <label>JPEG quality <b>{cmpQuality}</b>
+                      <label>{s.jpegQ} <b>{cmpQuality}</b>
                         <input type="range" min={20} max={95} step={5} value={cmpQuality} onChange={(e) => setCmpQuality(Number(e.target.value))} />
-                        <span className="slider-ends"><i>thrifty</i><i>pretty</i></span>
+                        <span className="slider-ends"><i>{s.thrifty}</i><i>{s.pretty}</i></span>
                       </label>
                     </div>
                   )}
@@ -992,41 +1023,62 @@ export default function App() {
               {tool.id === "rotate" && (
                 <>
                   <div className="chips">
-                    {([[90, "90° right"], [180, "180°"], [270, "90° left"]] as const).map(([v, l]) => (
+                    {([[90, s.rRight], [180, "180°"], [270, s.rLeft]] as const).map(([v, l]) => (
                       <button key={v} className={`chip${angle === v ? " on" : ""}`} onClick={() => setAngle(v)}>{l}</button>
                     ))}
                   </div>
-                  <label>Only certain pages? Leave empty for all.
-                    <input value={pages} onChange={(e) => setPages(e.target.value)} placeholder="e.g. 2,4" />
+                  <label>{s.onlyPages}
+                    <input value={pages} onChange={(e) => setPages(e.target.value)} placeholder={s.onlyPagesPh} />
+                  </label>
+                </>
+              )}
+
+              {tool.id === "page_numbers" && (
+                <>
+                  <span className="setting-label">{s.pnPosition}</span>
+                  <div className="chips">
+                    {([["bottom-center", s.pnBC], ["bottom-right", s.pnBR], ["bottom-left", s.pnBL], ["top-right", s.pnTR], ["top-left", s.pnTL]] as const).map(([v, l]) => (
+                      <button key={v} className={`chip${pnPos === v ? " on" : ""}`} onClick={() => setPnPos(v)}>{l}</button>
+                    ))}
+                  </div>
+                  <span className="setting-label">{s.pnFormat}</span>
+                  <div className="chips">
+                    {([["n", s.pnN], ["page-n", s.pnPageN], ["n-of-total", s.pnNofT]] as const).map(([v, l]) => (
+                      <button key={v} className={`chip${pnFmt === v ? " on" : ""}`} onClick={() => setPnFmt(v)}>{l}</button>
+                    ))}
+                  </div>
+                  <label>{s.pnSkip}
+                    <input type="number" min={0} max={20} value={pnSkip}
+                      onChange={(e) => setPnSkip(Math.max(0, Math.min(20, Number(e.target.value) || 0)))} />
                   </label>
                 </>
               )}
 
               {tool.id === "watermark" && (
                 <>
-                  <label>Watermark text
+                  <label>{s.wmText}
                     <input value={wmText} onChange={(e) => setWmText(e.target.value)} />
                   </label>
                   <div className="sliders">
-                    <label>Visibility <b>{wmOpacity}%</b>
+                    <label>{s.visibility} <b>{wmOpacity}%</b>
                       <input type="range" min={5} max={60} step={5} value={wmOpacity} onChange={(e) => setWmOpacity(Number(e.target.value))} />
-                      <span className="slider-ends"><i>whisper</i><i>shout</i></span>
+                      <span className="slider-ends"><i>{s.whisper}</i><i>{s.shout}</i></span>
                     </label>
                   </div>
                 </>
               )}
 
               {(tool.id === "protect" || tool.id === "unlock") && (
-                <label>{tool.id === "protect" ? "New password" : "Current password"}
+                <label>{tool.id === "protect" ? s.newPassword : s.currentPassword}
                   <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                    placeholder={tool.id === "unlock" ? "leave empty if there is none" : ""} />
+                    placeholder={tool.id === "unlock" ? s.noPassPh : ""} />
                 </label>
               )}
 
               {tool.id === "pdf2img" && (
                 <>
                   <div className="chips">
-                    {([[96, "Small"], [150, "Standard"], [300, "Sharp"]] as const).map(([v, l]) => (
+                    {([[96, s.iSmall], [150, s.iStandard], [300, s.iSharp]] as const).map(([v, l]) => (
                       <button key={v} className={`chip${dpi === v ? " on" : ""}`} onClick={() => setDpi(v)}>{l} · {v} dpi</button>
                     ))}
                   </div>
@@ -1040,42 +1092,56 @@ export default function App() {
 
               {tool.id === "ocr" && (
                 <div className="chips">
-                  {([["ind+eng", "Indonesian + English"], ["ind", "Indonesian"], ["eng", "English"]] as const).map(([v, l]) => (
+                  {([["ind+eng", s.langBoth], ["ind", s.langInd], ["eng", s.langEng]] as const).map(([v, l]) => (
                     <button key={v} className={`chip${ocrLang === v ? " on" : ""}`} onClick={() => setOcrLang(v)}>{l}</button>
                   ))}
                 </div>
               )}
+
+              {tool.id === "set_metadata" && (
+                <>
+                  <label>{s.mdTitle}
+                    <input value={mdTitle} onChange={(e) => setMdTitle(e.target.value)} />
+                  </label>
+                  <label>{s.mdAuthor}
+                    <input value={mdAuthor} onChange={(e) => setMdAuthor(e.target.value)} />
+                  </label>
+                  <label>{s.mdSubject}
+                    <input value={mdSubject} onChange={(e) => setMdSubject(e.target.value)} />
+                  </label>
+                  <label>{s.mdKeywords}
+                    <input value={mdKeywords} onChange={(e) => setMdKeywords(e.target.value)} />
+                  </label>
+                  <p className="option-hint">{s.mdHint}</p>
+                </>
+              )}
             </div>
 
-            {lockedInput && (
-              <div className="error">
-                This PDF is password protected, so tools cannot read it yet.
-                Run Unlock on it first, then come back here.
-              </div>
-            )}
+            {lockedInput && <div className="error">{s.lockedError}</div>}
+            {needsTwo && files.length === 1 && <p className="option-hint">{s.addOneMore}</p>}
 
-            {needsTwo && files.length === 1 && (
-              <p className="option-hint">Add at least one more file to combine.</p>
-            )}
+            <div className="run-row">
+              <button
+                className={`run${busy ? " working" : ""}`}
+                onClick={runTask}
+                disabled={!canRun}
+                style={busy && pct != null ? ({ "--pct": `${pct}%` } as React.CSSProperties) : undefined}
+              >
+                {busy ? <span className="spinner" /> : null}
+                {busy
+                  ? [s.working, batch ? s.fileOf(batch.i, batch.n) : "", pct != null ? ` ${pct}%` : ""].join("")
+                  : files.length > 1 && BATCHABLE.has(tool.id)
+                    ? `${s.tools[tool.id].action}${s.batchSuffix(files.length)}`
+                    : s.tools[tool.id].action}
+              </button>
+              {busy && (
+                <button className="cancel" onClick={cancelRun} disabled={cancelling}>
+                  {s.cancel}
+                </button>
+              )}
+            </div>
 
-            <button
-              className={`run${busy ? " working" : ""}`}
-              onClick={runTask}
-              disabled={!canRun}
-              style={busy && pct != null ? ({ "--pct": `${pct}%` } as React.CSSProperties) : undefined}
-            >
-              {busy ? <span className="spinner" /> : null}
-              {busy
-                ? [
-                    "Working on it…",
-                    batch ? ` file ${batch.i} of ${batch.n}` : "",
-                    pct != null ? ` ${pct}%` : "",
-                  ].join("")
-                : files.length > 1 && BATCHABLE.has(tool.id)
-                  ? `${tool.action} · ${files.length} files`
-                  : tool.action}
-            </button>
-
+            {info && <div className="notice">{info}</div>}
             {error && <div className="error">{error}</div>}
 
             {result && (
@@ -1089,11 +1155,11 @@ export default function App() {
                 <div className="result-actions">
                   {result.paths[0] && (
                     <>
-                      <button onClick={() => openPath(result.paths[0]).catch((e) => setError(`Could not open the file: ${e}`))}>
-                        Open file
+                      <button onClick={() => openPath(result.paths[0]).catch((e) => setError(s.couldNotOpen(String(e))))}>
+                        {s.openFile}
                       </button>
-                      <button onClick={() => revealItemInDir(result.paths[0]).catch((e) => setError(`Could not open the folder: ${e}`))}>
-                        Show in folder
+                      <button onClick={() => revealItemInDir(result.paths[0]).catch((e) => setError(s.couldNotFolder(String(e))))}>
+                        {s.showInFolder}
                       </button>
                     </>
                   )}
@@ -1105,7 +1171,7 @@ export default function App() {
 
         {dragging && (
           <div className="drag-overlay">
-            <span>Drop it like it's hot 🔥</span>
+            <span>{settings.lang === "id" ? "Lepaskan di sini 🔥" : "Drop it like it's hot 🔥"}</span>
           </div>
         )}
       </main>

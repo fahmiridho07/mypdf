@@ -547,6 +547,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
   box-shadow: var(--shadow);
 }
 .page-card:active { cursor: grabbing; }
+.page-card:focus-visible {
+  outline: 2px solid var(--g, var(--accent));
+  outline-offset: 1px;
+}
 .page-card.dragging {
   border-color: var(--g, var(--accent));
   outline: 2px solid var(--g, var(--accent));
@@ -602,7 +606,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   color: var(--ink-soft);
   font-weight: 500;
 }
-.options input[type="text"], .options input[type="password"], .options input:not([type]) {
+.options input[type="text"], .options input[type="password"], .options input[type="number"], .options input:not([type]) {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -648,6 +652,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .sliders input[type="range"] { accent-color: var(--g, var(--accent)); width: 100%; }
 .slider-ends { display: flex; justify-content: space-between; }
 .slider-ends i { font-style: normal; font-size: 11px; color: var(--ink-soft); }
+
+.run-row { display: flex; gap: 10px; }
+.run-row .run { flex: 1; }
+.cancel {
+  padding: 13px 20px;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.cancel:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+.cancel:disabled { opacity: 0.5; }
 
 .run {
   font-variant-numeric: tabular-nums;

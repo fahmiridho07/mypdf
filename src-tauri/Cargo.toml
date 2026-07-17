@@ -1,6 +1,6 @@
 [package]
 name = "tauri-app"
-version = "0.2.0"
+version = "0.3.0"
 description = "MyPDF, a local first PDF toolbox. Merge, split, compress, convert, OCR and more, fully offline."
 authors = ["Fahmi Ridho"]
 license = "AGPL-3.0"

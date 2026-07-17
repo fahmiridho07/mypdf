@@ -1,7 +1,8 @@
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use serde_json::Value;
 use tauri::{Emitter, Manager};
@@ -12,10 +13,24 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const ENGINE_SOURCE: &str = include_str!("../../engine/pdf_engine.py");
 
 static PYTHON: OnceLock<Result<String, String>> = OnceLock::new();
+static CURRENT_PIDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+static CANCELLED: AtomicBool = AtomicBool::new(false);
 
-fn find_python() -> Result<String, String> {
+fn find_python(app: &tauri::AppHandle) -> Result<String, String> {
     PYTHON
         .get_or_init(|| {
+            // A bundled runtime ships with the installed app so users need
+            // no Python of their own; fall back to a system install in dev.
+            if let Ok(res) = app.path().resource_dir() {
+                let bundled = res.join("python-embed").join(if cfg!(windows) {
+                    "python.exe"
+                } else {
+                    "bin/python3"
+                });
+                if bundled.is_file() {
+                    return Ok(bundled.to_string_lossy().to_string());
+                }
+            }
             for candidate in ["python", "python3", "py"] {
                 let mut cmd = Command::new(candidate);
                 cmd.arg("--version")
@@ -33,6 +48,31 @@ fn find_python() -> Result<String, String> {
             Err("Python was not found on this machine. Install it from python.org, then reopen the app.".into())
         })
         .clone()
+}
+
+/// Kill the running engine process tree. The UI shows the outcome as a
+/// calm "cancelled" note rather than an error.
+#[tauri::command]
+fn cancel_engine() -> Result<(), String> {
+    let pids: Vec<u32> = CURRENT_PIDS.lock().unwrap().drain(..).collect();
+    if !pids.is_empty() {
+        CANCELLED.store(true, Ordering::SeqCst);
+    }
+    for pid in pids {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let _ = Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
+        }
+    }
+    Ok(())
 }
 
 /// Write the embedded engine script to the app data dir so it works both in
@@ -56,8 +96,9 @@ fn engine_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 #[tauri::command]
 async fn run_engine(app: tauri::AppHandle, task: String, params: Value) -> Result<Value, String> {
-    let python = find_python()?;
+    let python = find_python(&app)?;
     let script = engine_path(&app)?;
+    CANCELLED.store(false, Ordering::SeqCst);
 
     let request = serde_json::json!({ "task": task, "params": params });
     let emitter = app.clone();
@@ -76,6 +117,8 @@ async fn run_engine(app: tauri::AppHandle, task: String, params: Value) -> Resul
                 cmd.creation_flags(CREATE_NO_WINDOW);
             }
             let mut child = cmd.spawn().map_err(|e| format!("could not start python: {e}"))?;
+            let pid = child.id();
+            CURRENT_PIDS.lock().unwrap().push(pid);
             child
                 .stdin
                 .take()
@@ -114,11 +157,16 @@ async fn run_engine(app: tauri::AppHandle, task: String, params: Value) -> Resul
                 let _ = se.read_to_string(&mut stderr_s);
             }
             child.wait().map_err(|e| e.to_string())?;
+            CURRENT_PIDS.lock().unwrap().retain(|p| *p != pid);
             Ok((last, stderr_s))
         },
     )
     .await
     .map_err(|e| e.to_string())??;
+
+    if CANCELLED.load(Ordering::SeqCst) {
+        return Err("cancelled".into());
+    }
 
     let parsed: Value = serde_json::from_str(last_line.trim()).map_err(|_| {
         format!(
@@ -140,7 +188,7 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![run_engine])
+        .invoke_handler(tauri::generate_handler![run_engine, cancel_engine])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

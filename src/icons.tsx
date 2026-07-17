@@ -8,6 +8,7 @@ export type IconId =
   | "merge" | "split" | "extract_pages" | "compress" | "rotate"
   | "watermark" | "protect" | "unlock" | "pdf2img" | "img2pdf"
   | "office2pdf" | "pdf2docx" | "ocr" | "extract_text" | "rearrange"
+  | "page_numbers" | "set_metadata"
   | "settings" | "shield";
 
 const soft = { fill: "currentColor", fillOpacity: 0.16 } as const;
@@ -122,6 +123,22 @@ const GLYPHS: Record<IconId, JSX.Element> = {
       <rect x="3.5" y="3" width="11.5" height="18" rx="2.4" />
       <path d="M6.5 7.5h5.5M6.5 11h5.5M6.5 14.5h3" />
       <path d="M13.5 17.8h6.8M17.6 15.2l2.7 2.6-2.7 2.6" {...soft} />
+    </>
+  ),
+  page_numbers: (
+    <>
+      <rect x="4.5" y="3" width="15" height="18" rx="2.5" />
+      <path d="M8 7.5h8M8 11h8M8 14.5h5" opacity="0.5" />
+      <circle cx="12" cy="18.6" r="2.6" {...soft} />
+      <path d="M11.4 17.6l.9-.6v3.2" />
+    </>
+  ),
+  set_metadata: (
+    <>
+      <path d="M12.6 3.5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+      <path d="M12.6 3.5L20 9h-5.4a2 2 0 0 1-2-2z" {...soft} />
+      <path d="M7.5 13h9M7.5 16.5h6" />
+      <circle cx="17.5" cy="16.5" r="1.2" {...dot} />
     </>
   ),
   settings: (

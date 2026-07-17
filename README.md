@@ -20,7 +20,7 @@ documents and would rather not send them to someone else's server.
 | 🗂️ **Arrange** | See every page as a thumbnail. Drag to reorder, rotate, or remove pages |
 | ✂️ **Split** | Break a PDF apart per page or by custom ranges |
 | 📑 **Pick Pages** | Keep only the pages you need |
-| 🗜️ **Compress** | Three presets plus full manual control over image resolution and JPEG quality |
+| 🗜️ **Compress** | Presets, full manual control, or "fit a size": tell it the MB limit and it finds settings that fit |
 | 🔄 **Rotate** | The whole file or selected pages |
 | 🖼️ **PDF to Images** | Render pages as PNG or JPG |
 | 📄 **Images to PDF** | Photos and scans into one tidy PDF |
@@ -30,12 +30,16 @@ documents and would rather not send them to someone else's server.
 | 💧 **Watermark** | Faint text across every page |
 | 🔍 **OCR** | Make scans searchable, with live per page progress |
 | 🔤 **Extract Text** | All the text into a .txt file |
+| 🔢 **Page Numbers** | Neat page numbers, covers skippable |
+| 🏷️ **Metadata** | Edit title, author, subject and keywords |
 
-Most tools accept **many files at once** and process them as a batch. Plus the
-small things that make it pleasant: drag and drop anywhere, page thumbnails
-with file info, live progress bars, a recent work history, output files that
-never overwrite existing ones, Esc to jump back home, and a settings page for
-your name, default OCR language and output folder.
+Most tools accept **many files at once** and process them as a parallel batch,
+with a **Cancel** button for long jobs. The interface speaks **English and
+Bahasa Indonesia**. Plus the small things that make it pleasant: drag and drop
+anywhere, page thumbnails with file info, live progress bars, a recent work
+history, output files that never overwrite existing ones, undo and keyboard
+control in the page organizer, Esc to jump back home, and a settings page for
+your name, language, default OCR language and output folder.
 
 ## Testing
 
@@ -72,9 +76,12 @@ Grab the latest setup exe from the
 
 ## Requirements
 
-To run the app you need:
+**The Windows installer ships with everything included**, a bundled Python
+runtime with all engine libraries, so it runs out of the box.
 
-- **Python 3.10+** with `pip install pikepdf pymupdf pillow`
+On Linux, macOS, or when running from source, you need **Python 3.10+** with
+`pip install pikepdf pymupdf pillow` (plus `pdf2docx` and `ocrmypdf` for those
+features).
 
 Optional, per feature (the app detects what is installed and tells you):
 
