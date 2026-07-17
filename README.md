@@ -25,6 +25,7 @@ documents and would rather not send them to someone else's server.
 | 🖼️ **PDF to Images** | Render pages as PNG or JPG |
 | 📄 **Images to PDF** | Photos and scans into one tidy PDF |
 | 📝 **Office to PDF** | Word, Excel, PowerPoint via LibreOffice |
+| ✏️ **PDF to Word** | Editable .docx out of any PDF |
 | 🔒 **Lock / Unlock** | AES password protection, or remove it from your own files |
 | 💧 **Watermark** | Faint text across every page |
 | 🔍 **OCR** | Make scans searchable, with live per page progress |
@@ -82,6 +83,7 @@ Optional, per feature (the app detects what is installed and tells you):
 | Strong compression | [Ghostscript](https://ghostscript.com) |
 | Office to PDF | [LibreOffice](https://libreoffice.org) |
 | OCR | [Tesseract](https://github.com/UB-Mannheim/tesseract) plus `pip install ocrmypdf` |
+| PDF to Word | `pip install pdf2docx` |
 
 For OCR in languages beyond English, place the matching `.traineddata` from
 [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) into your

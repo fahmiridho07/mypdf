@@ -10,7 +10,7 @@ import "./App.css";
 type ToolId =
   | "merge" | "split" | "extract_pages" | "compress" | "rotate"
   | "watermark" | "protect" | "unlock" | "pdf2img" | "img2pdf"
-  | "office2pdf" | "ocr" | "extract_text" | "rearrange";
+  | "office2pdf" | "pdf2docx" | "ocr" | "extract_text" | "rearrange";
 
 type Accept = "pdf" | "image" | "office";
 
@@ -51,6 +51,7 @@ const GROUPS: ToolGroup[] = [
       { id: "pdf2img", name: "PDF to Images", desc: "Render every page as a crisp PNG or JPG.", action: "Convert", multi: true, accept: "pdf" },
       { id: "img2pdf", name: "Images to PDF", desc: "Turn photos and scans into a single tidy PDF.", action: "Build PDF", multi: true, accept: "image" },
       { id: "office2pdf", name: "Office to PDF", desc: "Word, Excel and PowerPoint, out as clean PDFs.", action: "Convert", multi: true, accept: "office" },
+      { id: "pdf2docx", name: "PDF to Word", desc: "Turn a PDF back into an editable .docx document.", action: "Convert", multi: true, accept: "pdf" },
     ],
   },
   {
@@ -131,7 +132,7 @@ interface Progress { done: number; total: number }
 // Tools that take one input file can also run as a batch, one file at a time.
 const BATCHABLE = new Set<ToolId>([
   "compress", "rotate", "watermark", "protect", "unlock",
-  "pdf2img", "ocr", "extract_text", "office2pdf",
+  "pdf2img", "ocr", "extract_text", "office2pdf", "pdf2docx",
 ]);
 
 const CONFETTI = ["#c05b2a", "#6f7a2f", "#2f7a6f", "#4a5a8f", "#a0741f", "#e0a03f"];
@@ -301,7 +302,16 @@ export default function App() {
   const [pageOrder, setPageOrder] = useState<number[]>([]);
   const [pageRot, setPageRot] = useState<Record<number, number>>({});
   const [pagesLoading, setPagesLoading] = useState(false);
-  const dragFrom = useRef<number | null>(null);
+  // Page reordering uses plain mouse events: Tauri's window level file drag
+  // handler swallows HTML5 drag events on Windows, so draggable="true" never
+  // fires inside the webview.
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    const up = () => setDragIdx(null);
+    window.addEventListener("mouseup", up);
+    return () => window.removeEventListener("mouseup", up);
+  }, []);
 
   const toolRef = useRef(tool);
   toolRef.current = tool;
@@ -473,6 +483,9 @@ export default function App() {
         case "office2pdf":
           params = { input, output: `${outBase(input)}\\${stemOf(input)}.pdf` };
           break;
+        case "pdf2docx":
+          params = { input, output: `${outBase(input)}\\${stemOf(input)}.docx` };
+          break;
         case "ocr":
           params = { input, lang: ocrLang, output: outFor(input, "ocr") };
           break;
@@ -560,6 +573,7 @@ export default function App() {
 
   const missingFor = (t: Tool) =>
     (t.id === "office2pdf" && doctor != null && !doctor.libreoffice) ||
+    (t.id === "pdf2docx" && doctor != null && !doctor.pdf2docx) ||
     (t.id === "ocr" && doctor != null && !(doctor.ocrmypdf && doctor.tesseract));
 
   const looseExt = droppedLoose.length > 0 ? extOf(droppedLoose[0]) : "";
@@ -813,6 +827,9 @@ export default function App() {
                   <>This tool needs two free helpers that are not installed yet:
                     Tesseract (<code>winget install UB-Mannheim.TesseractOCR</code>) and
                     ocrmypdf (<code>pip install ocrmypdf</code>). Install them, then reopen MyPDF.</>
+                ) : tool.id === "pdf2docx" ? (
+                  <>This tool needs one free helper that is not installed yet:
+                    <code>pip install pdf2docx</code>. Install it, then reopen MyPDF.</>
                 ) : (
                   <>This tool needs LibreOffice, which is not installed yet:
                     <code>winget install TheDocumentFoundation.LibreOffice</code>. Install it, then reopen MyPDF.</>
@@ -878,20 +895,21 @@ export default function App() {
                     {pageOrder.map((pg, pos) => (
                       <div
                         key={pg}
-                        className="page-card"
-                        draggable
-                        onDragStart={() => { dragFrom.current = pos; }}
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={() => {
-                          const from = dragFrom.current;
-                          dragFrom.current = null;
-                          if (from == null || from === pos) return;
+                        className={`page-card${dragIdx === pos ? " dragging" : ""}`}
+                        onMouseDown={(e) => {
+                          if ((e.target as HTMLElement).closest("button")) return;
+                          e.preventDefault();
+                          setDragIdx(pos);
+                        }}
+                        onMouseEnter={() => {
+                          if (dragIdx === null || dragIdx === pos) return;
                           setPageOrder((o) => {
                             const n = [...o];
-                            const [moved] = n.splice(from, 1);
+                            const [moved] = n.splice(dragIdx, 1);
                             n.splice(pos, 0, moved);
                             return n;
                           });
+                          setDragIdx(pos);
                         }}
                       >
                         <img src={pageThumbs[pg]} alt="" draggable={false}

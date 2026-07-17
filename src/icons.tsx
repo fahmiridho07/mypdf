@@ -7,7 +7,7 @@ import type { JSX } from "react";
 export type IconId =
   | "merge" | "split" | "extract_pages" | "compress" | "rotate"
   | "watermark" | "protect" | "unlock" | "pdf2img" | "img2pdf"
-  | "office2pdf" | "ocr" | "extract_text" | "rearrange"
+  | "office2pdf" | "pdf2docx" | "ocr" | "extract_text" | "rearrange"
   | "settings" | "shield";
 
 const soft = { fill: "currentColor", fillOpacity: 0.16 } as const;
@@ -78,6 +78,14 @@ const GLYPHS: Record<IconId, JSX.Element> = {
       <path d="M5.9 6.8l1 4.4 1-3 1 3 1-4.4" />
       <path d="M14.2 7.4h3.2M15.8 5.7l1.7 1.7-1.7 1.7" />
       <rect x="13" y="11.5" width="8" height="10" rx="2" {...soft} />
+    </>
+  ),
+  pdf2docx: (
+    <>
+      <rect x="3.5" y="3.5" width="8.6" height="11" rx="1.8" {...soft} />
+      <path d="M14.2 7.4h3.2M15.8 5.7l1.7 1.7-1.7 1.7" />
+      <rect x="13" y="11.5" width="8" height="10" rx="2" />
+      <path d="M14.9 14.6l1 4.4 1-3 1 3 1-4.4" />
     </>
   ),
   protect: (

@@ -375,6 +375,53 @@ def task_ocr(p):
     return {"output": outp}
 
 
+def task_pdf2docx(p):
+    import contextlib
+    import logging
+    import re
+    try:
+        from pdf2docx import Converter
+    except ImportError:
+        raise RuntimeError(
+            "The pdf2docx package is not installed. "
+            "Run: pip install pdf2docx, then try again.")
+    doc = open_pdf(p["input"])  # friendly error if locked
+    total = doc.page_count
+    doc.close()
+    outp = unique_path(p["output"])
+
+    # pdf2docx logs to stdout, which must stay JSON only. Send its output to
+    # stderr and turn the per page log lines into progress events (the
+    # converter walks the pages twice: parsing, then creating). Progress must
+    # bypass the redirect, so keep a handle on the real stdout.
+    real_stdout = sys.stdout
+
+    class _Progress(logging.Handler):
+        done = 0
+
+        def emit(self, record):
+            if re.search(r"\(\d+/\d+\) Page", record.getMessage()):
+                self.done += 1
+                real_stdout.write(json.dumps(
+                    {"progress": self.done, "total": total * 2}) + "\n")
+                real_stdout.flush()
+
+    handler = _Progress()
+    logging.getLogger().addHandler(handler)
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            cv = Converter(p["input"])
+            try:
+                cv.convert(outp)
+            finally:
+                cv.close()
+    finally:
+        logging.getLogger().removeHandler(handler)
+    if not os.path.isfile(outp):
+        raise RuntimeError("Conversion produced no output file.")
+    return {"output": outp}
+
+
 def task_extract_text(p):
     doc = open_pdf(p["input"])
     text = "\n\n".join(page.get_text() for page in doc)
@@ -457,7 +504,7 @@ def task_rearrange(p):
 def task_doctor(_p):
     """Report which engines/tools are available."""
     tools = {}
-    for mod in ("fitz", "pikepdf", "ocrmypdf"):
+    for mod in ("fitz", "pikepdf", "ocrmypdf", "pdf2docx"):
         try:
             __import__(mod)
             tools[mod] = True
@@ -482,6 +529,7 @@ TASKS = {
     "pdf2img": task_pdf2img,
     "img2pdf": task_img2pdf,
     "office2pdf": task_office2pdf,
+    "pdf2docx": task_pdf2docx,
     "ocr": task_ocr,
     "extract_text": task_extract_text,
     "thumbnail": task_thumbnail,

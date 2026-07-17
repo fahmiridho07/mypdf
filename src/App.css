@@ -546,6 +546,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
   box-shadow: var(--shadow);
 }
 .page-card:active { cursor: grabbing; }
+.page-card.dragging {
+  border-color: var(--g, var(--accent));
+  outline: 2px solid var(--g, var(--accent));
+  outline-offset: -1px;
+  transform: scale(1.05);
+  box-shadow: var(--shadow);
+  z-index: 2;
+  cursor: grabbing;
+}
+.page-card img { pointer-events: none; user-select: none; }
 .page-card img {
   width: 100%;
   border: 1px solid var(--line);

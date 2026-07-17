@@ -128,6 +128,14 @@ def main():
         r = call("compress", {"input": a, "output": os.path.join(tmp, "c.pdf")})
         check("compress (any engine)", r["ok"] and r["result"]["after"] > 0)
 
+        r = call("pdf2docx", {"input": a, "output": os.path.join(tmp, "a.docx")})
+        try:
+            import pdf2docx  # noqa: F401
+            check("pdf to word", r["ok"] and os.path.isfile(r["result"]["output"]))
+        except ImportError:
+            check("pdf to word gives install hint when missing",
+                  not r["ok"] and "pip install pdf2docx" in r["error"])
+
         # unicode paths survive the stdin round trip
         udir = os.path.join(tmp, "dokumen café 日本語")
         os.makedirs(udir)
