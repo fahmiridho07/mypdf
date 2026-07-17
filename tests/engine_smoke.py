@@ -136,6 +136,40 @@ def main():
             check("pdf to word gives install hint when missing",
                   not r["ok"] and "pip install pdf2docx" in r["error"])
 
+        # internal links (tables of contents) must survive rearrange and
+        # extract, renumbered to the new page positions
+        import fitz
+        linked = os.path.join(tmp, "linked.pdf")
+        doc = fitz.open()
+        for i in range(3):
+            doc.new_page().insert_text((72, 72), f"page {i + 1}", fontsize=20)
+        doc[0].insert_link({"kind": fitz.LINK_GOTO, "page": 2,
+                            "from": fitz.Rect(72, 100, 200, 120)})
+        doc.set_toc([[1, "Chapter on page 3", 3]])
+        doc.save(linked)
+        doc.close()
+
+        r = call("rearrange", {"input": linked, "order": [2, 0, 1],
+                               "output": os.path.join(tmp, "linked_arr.pdf")})
+        ok_link = False
+        if r["ok"]:
+            doc = fitz.open(r["result"]["output"])
+            links = doc[1].get_links()  # old page 1 now sits at position 2
+            ok_link = len(links) == 1 and links[0].get("page") == 0
+            ok_link = ok_link and doc.get_toc() and doc.get_toc()[0][2] == 1
+            doc.close()
+        check("internal links and toc survive rearrange", bool(ok_link))
+
+        r = call("merge", {"inputs": [linked, linked],
+                           "output": os.path.join(tmp, "linked_merged.pdf")})
+        ok_toc = False
+        if r["ok"]:
+            doc = fitz.open(r["result"]["output"])
+            toc = doc.get_toc()
+            ok_toc = len(toc) == 2 and toc[0][2] == 3 and toc[1][2] == 6
+            doc.close()
+        check("bookmarks survive merge with offsets", ok_toc)
+
         # signature widgets (e meterai style) must stay visible after
         # restructuring: their appearance is baked into the page content
         import pikepdf

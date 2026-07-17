@@ -532,6 +532,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .page-card {
   position: relative;
+  overflow: hidden;
   background: var(--paper-raised);
   border: 1px solid var(--line);
   border-radius: 10px;

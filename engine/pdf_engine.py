@@ -137,11 +137,23 @@ def flatten_signatures(doc):
 def task_merge(p):
     import fitz
     out = fitz.open()
+    toc = []
+    offset = 0
     for path in p["inputs"]:
         src = open_pdf(path)
         flatten_signatures(src)
         out.insert_pdf(src)
+        # carry each document's bookmarks over, shifted to its new position
+        for entry in (src.get_toc(simple=True) or []):
+            lvl, title, pageno = entry[0], entry[1], entry[2]
+            toc.append([lvl, title, pageno + offset])
+        offset += src.page_count
         src.close()
+    if toc:
+        try:
+            out.set_toc(toc)
+        except Exception:  # noqa: BLE001 - a broken outline must not kill the merge
+            pass
     outp = unique_path(p["output"])
     out.save(outp, garbage=3, deflate=True)
     out.close()
@@ -162,12 +174,13 @@ def task_split(p):
             pages = parse_page_ranges(spec, src.page_count)
             if not pages:
                 continue
-            out = fitz.open()
-            for pg in pages:
-                out.insert_pdf(src, from_page=pg, to_page=pg)
+            # select() keeps internal links and bookmarks between kept pages
+            part = fitz.open(p["input"])
+            flatten_signatures(part)
+            part.select(pages)
             path = os.path.join(outdir, f"{base}_part{i}.pdf")
-            out.save(path, garbage=3, deflate=True)
-            out.close()
+            part.save(path, garbage=3, deflate=True)
+            part.close()
             outputs.append(path)
     else:
         for pg in range(src.page_count):
@@ -183,18 +196,15 @@ def task_split(p):
 
 
 def task_extract_pages(p):
-    import fitz
     src = open_pdf(p["input"])
     flatten_signatures(src)
     pages = parse_page_ranges(p["pages"], src.page_count)
     if not pages:
         raise ValueError("That page selection matches no pages in this file.")
-    out = fitz.open()
-    for pg in pages:
-        out.insert_pdf(src, from_page=pg, to_page=pg)
+    # select() keeps internal links and bookmarks between kept pages
+    src.select(pages)
     outp = unique_path(p["output"])
-    out.save(outp, garbage=3, deflate=True)
-    out.close()
+    src.save(outp, garbage=3, deflate=True)
     src.close()
     return {"output": outp, "pages": len(pages)}
 
@@ -498,24 +508,23 @@ def task_page_thumbs(p):
 
 
 def task_rearrange(p):
-    """Rebuild a PDF with pages in the given order; omitted pages are dropped."""
-    import fitz
+    """Reorder pages in place with select(): unlike copying page by page,
+    this keeps internal links (tables of contents) and bookmarks, renumbering
+    them to the new page positions. Omitted pages are dropped."""
     src = open_pdf(p["input"])
     flatten_signatures(src)
     order = [i for i in p["order"] if isinstance(i, int) and 0 <= i < src.page_count]
     if not order:
         raise ValueError("Keep at least one page.")
     rotations = {int(k): int(v) for k, v in (p.get("rotations") or {}).items()}
-    out = fitz.open()
+    src.select(order)
     for pos, pg in enumerate(order):
-        out.insert_pdf(src, from_page=pg, to_page=pg)
         extra = rotations.get(pg, 0)
         if extra:
-            page = out[pos]
+            page = src[pos]
             page.set_rotation((page.rotation + extra) % 360)
     outp = unique_path(p["output"])
-    out.save(outp, garbage=3, deflate=True)
-    out.close()
+    src.save(outp, garbage=3, deflate=True)
     src.close()
     return {"output": outp, "pages": len(order)}
 
