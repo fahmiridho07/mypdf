@@ -136,6 +136,39 @@ def main():
             check("pdf to word gives install hint when missing",
                   not r["ok"] and "pip install pdf2docx" in r["error"])
 
+        # signature widgets (e meterai style) must stay visible after
+        # restructuring: their appearance is baked into the page content
+        import pikepdf
+        from pikepdf import Array, Dictionary, Name
+        sig_src = os.path.join(tmp, "sig.pdf")
+        make_pdf(sig_src, pages=2)
+        pdf = pikepdf.open(sig_src, allow_overwriting_input=True)
+        ap = pikepdf.Stream(pdf, b"q 0.9 0.2 0.2 rg 0 0 170 80 re f Q")
+        ap[Name.Type] = Name.XObject
+        ap[Name.Subtype] = Name.Form
+        ap[Name.BBox] = Array([0, 0, 170, 80])
+        sig = Dictionary(Type=Name.Annot, Subtype=Name.Widget, FT=Name.Sig,
+                         T=pikepdf.String("sig1"), Rect=Array([350, 600, 520, 680]),
+                         F=4, AP=Dictionary(N=ap))
+        sig_i = pdf.make_indirect(sig)
+        pdf.pages[0][Name.Annots] = pdf.make_indirect(Array([sig_i]))
+        pdf.Root[Name.AcroForm] = pdf.make_indirect(
+            Dictionary(Fields=Array([sig_i]), SigFlags=3))
+        pdf.save(os.path.join(tmp, "sig2.pdf"))
+        pdf.close()
+        r = call("rearrange", {"input": os.path.join(tmp, "sig2.pdf"),
+                               "order": [1, 0], "output": os.path.join(tmp, "sig_arr.pdf")})
+        ok_flat = False
+        if r["ok"]:
+            import fitz
+            doc = fitz.open(r["result"]["output"])
+            pix = doc[1].get_pixmap(dpi=40)
+            reds = sum(1 for y in range(pix.height) for x in range(pix.width)
+                       if pix.pixel(x, y)[0] > 150 and pix.pixel(x, y)[1] < 100)
+            ok_flat = reds > 50 and not any(True for pg in doc for _ in pg.widgets())
+            doc.close()
+        check("signature stamp baked into content", ok_flat)
+
         # unicode paths survive the stdin round trip
         udir = os.path.join(tmp, "dokumen café 日本語")
         os.makedirs(udir)

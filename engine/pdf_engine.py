@@ -119,11 +119,27 @@ def task_info(p):
     return info
 
 
+def flatten_signatures(doc):
+    """When a document carries digital signature widgets (e meterai, e sign),
+    bake their appearance into the page content before restructuring.
+    Any edit already breaks the cryptographic validity; baking makes sure the
+    visual stamp survives in every viewer."""
+    import fitz
+    try:
+        has_sig = any(w.field_type == fitz.PDF_WIDGET_TYPE_SIGNATURE
+                      for page in doc for w in page.widgets())
+    except Exception:  # noqa: BLE001 - odd widget trees must never break a task
+        has_sig = False
+    if has_sig and hasattr(doc, "bake"):
+        doc.bake(annots=False, widgets=True)
+
+
 def task_merge(p):
     import fitz
     out = fitz.open()
     for path in p["inputs"]:
         src = open_pdf(path)
+        flatten_signatures(src)
         out.insert_pdf(src)
         src.close()
     outp = unique_path(p["output"])
@@ -135,6 +151,7 @@ def task_merge(p):
 def task_split(p):
     import fitz
     src = open_pdf(p["input"])
+    flatten_signatures(src)
     base = os.path.splitext(os.path.basename(p["input"]))[0]
     outdir = unique_dir(p["output_dir"])
     os.makedirs(outdir, exist_ok=True)
@@ -168,6 +185,7 @@ def task_split(p):
 def task_extract_pages(p):
     import fitz
     src = open_pdf(p["input"])
+    flatten_signatures(src)
     pages = parse_page_ranges(p["pages"], src.page_count)
     if not pages:
         raise ValueError("That page selection matches no pages in this file.")
@@ -483,6 +501,7 @@ def task_rearrange(p):
     """Rebuild a PDF with pages in the given order; omitted pages are dropped."""
     import fitz
     src = open_pdf(p["input"])
+    flatten_signatures(src)
     order = [i for i in p["order"] if isinstance(i, int) and 0 <= i < src.page_count]
     if not order:
         raise ValueError("Keep at least one page.")
