@@ -67,6 +67,8 @@ jobs:
   winget:
     needs: build
     runs-on: windows-latest
+    # harmless while the initial package submission is still in moderation
+    continue-on-error: true
     steps:
       - name: Submit version update to winget-pkgs
         shell: pwsh
