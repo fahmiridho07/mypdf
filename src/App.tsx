@@ -310,13 +310,19 @@ export default function App() {
   useEffect(() => {
     const up = () => setDragIdx(null);
     window.addEventListener("mouseup", up);
-    return () => window.removeEventListener("mouseup", up);
+    window.addEventListener("blur", up);
+    return () => {
+      window.removeEventListener("mouseup", up);
+      window.removeEventListener("blur", up);
+    };
   }, []);
 
   const toolRef = useRef(tool);
   toolRef.current = tool;
   const settingsRef = useRef(showSettings);
   settingsRef.current = showSettings;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
 
   const setTool = (t: Tool | null) => {
     setToolState(t);
@@ -340,7 +346,7 @@ export default function App() {
       setProgress({ done: e.payload.done, total: e.payload.total });
     });
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !busyRef.current) {
         setShowSettings(false);
         setToolState(null);
       }
@@ -563,18 +569,21 @@ export default function App() {
     }
   };
 
-  const lockedInput = tool?.id !== "unlock" && files.some((f) => meta[f]?.encrypted);
-
-  const canRun = files.length > 0 && !busy && !lockedInput &&
-    (tool?.id !== "protect" || password.length > 0) &&
-    (tool?.id !== "extract_pages" || pages.trim().length > 0) &&
-    (tool?.id !== "split" || splitMode === "all" || ranges.trim().length > 0) &&
-    (tool?.id !== "rearrange" || pageOrder.length > 0);
-
   const missingFor = (t: Tool) =>
     (t.id === "office2pdf" && doctor != null && !doctor.libreoffice) ||
     (t.id === "pdf2docx" && doctor != null && !doctor.pdf2docx) ||
     (t.id === "ocr" && doctor != null && !(doctor.ocrmypdf && doctor.tesseract));
+
+  const lockedInput = tool?.id !== "unlock" && files.some((f) => meta[f]?.encrypted);
+  const needsTwo = tool != null && (tool.id === "merge" || tool.id === "img2pdf");
+
+  const canRun = files.length > 0 && !busy && !lockedInput &&
+    (tool == null || !missingFor(tool)) &&
+    (!needsTwo || files.length >= 2) &&
+    (tool?.id !== "protect" || password.length > 0) &&
+    (tool?.id !== "extract_pages" || pages.trim().length > 0) &&
+    (tool?.id !== "split" || splitMode === "all" || ranges.trim().length > 0) &&
+    (tool?.id !== "rearrange" || pageOrder.length > 0);
 
   const looseExt = droppedLoose.length > 0 ? extOf(droppedLoose[0]) : "";
   const looseAccept: Accept | "" =
@@ -699,7 +708,7 @@ export default function App() {
               <p className="option-hint">
                 MyPDF {APP_VERSION}, free and open source under AGPL 3.0.
                 Everything runs on this computer; the app makes no network requests.{" "}
-                <button className="link" onClick={() => openUrl(REPO_URL)}>Source code on GitHub</button>
+                <button className="link" onClick={() => openUrl(REPO_URL).catch(() => {})}>Source code on GitHub</button>
               </p>
             </div>
           </div>
@@ -864,7 +873,7 @@ export default function App() {
                           {m?.pages ? `${m.pages} page${m.pages > 1 ? "s" : ""}` : ""}
                           {m?.pages && m?.size_bytes ? " · " : ""}
                           {m?.size_bytes ? fmtSize(m.size_bytes) : ""}
-                          {m?.encrypted ? " · locked 🔒" : ""}
+                          {m?.encrypted ? " · password locked" : ""}
                         </span>
                       </span>
                       {tool.multi && (
@@ -1045,6 +1054,10 @@ export default function App() {
               </div>
             )}
 
+            {needsTwo && files.length === 1 && (
+              <p className="option-hint">Add at least one more file to combine.</p>
+            )}
+
             <button
               className={`run${busy ? " working" : ""}`}
               onClick={runTask}
@@ -1076,8 +1089,12 @@ export default function App() {
                 <div className="result-actions">
                   {result.paths[0] && (
                     <>
-                      <button onClick={() => openPath(result.paths[0])}>Open file</button>
-                      <button onClick={() => revealItemInDir(result.paths[0])}>Show in folder</button>
+                      <button onClick={() => openPath(result.paths[0]).catch((e) => setError(`Could not open the file: ${e}`))}>
+                        Open file
+                      </button>
+                      <button onClick={() => revealItemInDir(result.paths[0]).catch((e) => setError(`Could not open the folder: ${e}`))}>
+                        Show in folder
+                      </button>
                     </>
                   )}
                 </div>
