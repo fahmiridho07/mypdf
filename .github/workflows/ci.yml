@@ -18,6 +18,7 @@ jobs:
       # system binaries no CI image provides.
       - run: pip install pymupdf pikepdf pillow pdf2docx
       - run: python tests/engine_smoke.py
+      - run: python experiments/smart-intake/test_smart_intake.py
 
   # Verifies the exact runtime that ships inside the Windows installer:
   # embeddable CPython plus pinned engine dependencies.
@@ -34,6 +35,9 @@ jobs:
       - name: Engine smoke tests on bundled runtime
         shell: pwsh
         run: ./src-tauri/python-embed/python.exe tests/engine_smoke.py
+      - name: Smart Intake POC tests on bundled runtime
+        shell: pwsh
+        run: ./src-tauri/python-embed/python.exe experiments/smart-intake/test_smart_intake.py
 
   rust-check:
     runs-on: ubuntu-latest
