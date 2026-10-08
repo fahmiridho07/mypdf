@@ -29,12 +29,17 @@ suites. MyPDF does the same chores locally, in Indonesian and English.
 counts, when they exist, count downloads, not users. Do not quote them as
 users.
 
-**AI use case (roadmap, not shipped).** No AI features exist in the app today
-by design: the core promise is offline processing. The honest roadmap is one
-optional, explicit, user consented cloud feature: summarize or ask questions
-about a document via the Claude API, with the file sent only on request and
-the offline core untouched. Do not apply as an AI product; apply as a local
-first tool exploring one consented AI extension.
+**AI use case (roadmap, first POC done, not shipped).** No AI features exist
+in the app today by design: the core promise is offline processing. A first
+proof of concept, Smart Intake (`experiments/smart-intake`, PR #4), runs an
+end to end invoice workflow: batch PDFs in, local text extraction, field
+extraction through a provider interface, validation flags, human review,
+CSV plus organized copies. The default provider is local and offline; the
+Claude provider is implemented but untested (no API key here) and strictly
+opt in with explicit consent. Next step with credits: keyed live runs to
+measure field accuracy, latency, tokens, and cost on diverse documents. Do
+not apply as an AI product; apply as a local first tool with a working
+workflow prototype exploring one consented AI extension.
 
 **Prototype status.** Working desktop prototype, v0.3.0 pending final clean
 Windows QA. Public repo: https://github.com/fahmiridho07/mypdf
