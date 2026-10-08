@@ -28,6 +28,25 @@ from provider import FIELDS, get_provider  # noqa: E402
 from validate import validate  # noqa: E402
 
 
+def process_doc(provider, src, name, tmp):
+    """One document through extract, fields, validate. Never raises:
+    provider failures become an error row so the batch continues."""
+    t0 = time.perf_counter()
+    try:
+        text = engine_text(src, tmp)
+        rec, usage = provider.extract(text)
+        flags = validate(rec)
+    except Exception as e:  # noqa: BLE001 - batch must continue
+        rec = {f: None for f in FIELDS}
+        usage = {"error": str(e)[:200]}
+        flags = ["provider_error"]
+    ms = (time.perf_counter() - t0) * 1000
+    return {"file": name, **rec,
+            "flags": ";".join(flags),
+            "latency_ms": round(ms, 1),
+            "usage": json.dumps(usage)}
+
+
 def engine_text(pdf_path, workdir):
     req = json.dumps({"task": "extract_text", "params": {
         "input": pdf_path,
@@ -51,7 +70,8 @@ def main():
     ap = argparse.ArgumentParser(description="MyPDF Smart Intake POC")
     ap.add_argument("--in", dest="indir", required=True)
     ap.add_argument("--out", dest="outdir", required=True)
-    ap.add_argument("--provider", default="mock", choices=["mock", "claude"])
+    ap.add_argument("--provider", default="mock",
+                    choices=["mock", "claude", "gemini"])
     ap.add_argument("--model", default=None)
     ap.add_argument("--yes", action="store_true",
                     help="skip the cloud consent prompt")
@@ -65,9 +85,10 @@ def main():
         return 1
 
     provider = get_provider(a.provider, model=a.model)
-    if a.provider == "claude" and not a.yes:
-        print("DISCLOSURE: the Claude provider sends extracted document "
-              "text (not files) to the Anthropic API for classification "
+    if a.provider in ("claude", "gemini") and not a.yes:
+        where = "the Anthropic API" if a.provider == "claude" else "the Google Gemini API"
+        print(f"DISCLOSURE: the {a.provider} provider sends extracted document "
+              f"text (not files) to {where} for classification "
               "and field extraction. Local PDF operations stay offline.")
         ans = input("Type YES to continue: ").strip()
         if ans != "YES":
@@ -78,20 +99,13 @@ def main():
     rows, total_ms = [], 0
     with tempfile.TemporaryDirectory(prefix="smart_intake_") as tmp:
         for i, name in enumerate(pdfs):
-            src = os.path.join(a.indir, name)
-            t0 = time.perf_counter()
-            text = engine_text(src, tmp)
-            rec, usage = provider.extract(text)
-            flags = validate(rec)
-            ms = (time.perf_counter() - t0) * 1000
-            total_ms += ms
-            rows.append({"file": name, **rec,
-                         "flags": ";".join(flags),
-                         "latency_ms": round(ms, 1),
-                         "usage": json.dumps(usage)})
+            row = process_doc(provider, os.path.join(a.indir, name), name, tmp)
+            total_ms += row["latency_ms"]
+            rows.append(row)
+            flags = row["flags"].split(";") if row["flags"] else []
             n_flag = f" [{len(flags)} flags]" if flags else " [clean]"
             print(f"  {i + 1}/{len(pdfs)} {name}: "
-                  f"{rec['vendor']} {rec['total']}{n_flag}")
+                  f"{row['vendor']} {row['total']}{n_flag}")
 
     review_path = os.path.join(a.outdir, "review.json")
     with open(review_path, "w", encoding="utf-8") as f:

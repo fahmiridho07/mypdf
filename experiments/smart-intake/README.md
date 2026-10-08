@@ -34,12 +34,18 @@ python experiments/smart-intake/test_smart_intake.py
 python experiments/smart-intake/pipeline.py --in experiments/smart-intake/samples --out experiments/smart-intake/results
 ```
 
-Live Claude run (needs a key, sends document text to Anthropic):
+Live runs (need a key, send document text to the provider):
 
 ```powershell
+# Claude (untested, no key on this machine)
 $env:ANTHROPIC_API_KEY="..."
 $env:CLAUDE_MODEL="..."  # a current model id from the Claude docs
 python experiments/smart-intake/pipeline.py --in <folder> --out <folder> --provider claude --yes
+
+# Gemini (tested 2026-10-08 with gemini-3.8-flash, see EVALUATION.md)
+$env:GEMINI_API_KEY="..."
+$env:GEMINI_MODEL="gemini-3.8-flash"  # or another current id from the Gemini docs
+python experiments/smart-intake/pipeline.py --in <folder> --out <folder> --provider gemini --yes
 ```
 
 Without `--yes`, the Claude path prints exactly what will leave the
