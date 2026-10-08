@@ -280,7 +280,7 @@ def task_compress(p):
         doc = fitz.open(inp)
         doc.save(outp, garbage=4, deflate=True, clean=True)
         doc.close()
-        engine = "pymupdf (install Ghostscript untuk kompresi lebih kuat)"
+        engine = "pymupdf (install Ghostscript for stronger compression)"
     after = os.path.getsize(outp)
     if after >= before:  # keep the smaller original
         shutil.copyfile(inp, outp)
@@ -367,8 +367,12 @@ def task_pdf2img(p):
 
 def task_img2pdf(p):
     import fitz
+    inputs = p.get("inputs", [])
+    if not inputs:
+        raise ValueError("No image files provided.")
     out = fitz.open()
-    for path in p["inputs"]:
+    total = len(inputs)
+    for i, path in enumerate(inputs):
         img = fitz.open(path)
         rect = img[0].rect
         pdfbytes = img.convert_to_pdf()
@@ -377,6 +381,8 @@ def task_img2pdf(p):
         page = out.new_page(width=rect.width, height=rect.height)
         page.show_pdf_page(rect, pdf, 0)
         pdf.close()
+        if total > 1:
+            emit_progress(i + 1, total)
     outp = unique_path(p["output"])
     out.save(outp, garbage=3, deflate=True)
     out.close()
@@ -387,7 +393,7 @@ def task_office2pdf(p):
     soffice = find_tool("soffice")
     if not soffice:
         raise RuntimeError(
-            "LibreOffice belum terinstall. Install dengan: "
+            "LibreOffice was not found. Install it with: "
             "winget install TheDocumentFoundation.LibreOffice")
     import tempfile
     outp = unique_path(p["output"])
@@ -413,33 +419,58 @@ def task_ocr(p):
         import ocrmypdf  # noqa: F401
     except ImportError:
         raise RuntimeError(
-            "ocrmypdf belum terinstall. Install dengan: pip install ocrmypdf "
-            "(dan Tesseract: winget install UB-Mannheim.TesseractOCR)")
+            "ocrmypdf is not installed. Install it with: pip install ocrmypdf "
+            "(plus Tesseract: winget install UB-Mannheim.TesseractOCR)")
     import re
     lang = p.get("lang", "ind+eng")
     outp = unique_path(p["output"])
     doc = open_pdf(p["input"])
     total = doc.page_count
     doc.close()
+    # A stale TESSDATA_PREFIX pointing at a missing folder breaks even stock
+    # English OCR. Ignore it when invalid; keep a valid custom setup as is.
+    child_env = dict(os.environ)
+    tess_prefix = child_env.get("TESSDATA_PREFIX", "")
+    if tess_prefix and not os.path.isdir(tess_prefix):
+        del child_env["TESSDATA_PREFIX"]
     args = [sys.executable, "-m", "ocrmypdf", "-l", lang,
             "--skip-text", "-v1", p["input"], outp]
     proc = subprocess.Popen(
         args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
-        errors="replace",
+        errors="replace", env=child_env,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     seen = set()
-    tail = []
+    log_lines = []
     for line in proc.stderr:
-        tail.append(line)
-        tail = tail[-30:]
+        log_lines.append(line)
         # "N Grafting" is logged near the end of each page's pipeline
         m = re.match(r"\s*(\d+) Grafting\b", line)
         if m and int(m.group(1)) not in seen:
             seen.add(int(m.group(1)))
             emit_progress(len(seen), total)
-    proc.wait(timeout=1800)
+    try:
+        proc.wait(timeout=1800)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        raise RuntimeError("OCR timed out after 30 minutes on this file.")
     if proc.returncode != 0:
-        raise RuntimeError(f"OCR failed: {''.join(tail)[:800]}")
+        log = "".join(log_lines[-200:])
+        missing = re.search(r"Failed loading language '([A-Za-z_+]+)'", log)
+        if not missing:
+            missing = re.search(
+                r"does not have language data for the following requested "
+                r"languages:\s+([A-Za-z_+]+)", log)
+        if missing:
+            name = missing.group(1)
+            raise RuntimeError(
+                f"Tesseract has no language data for '{name}'. Copy "
+                f"{name}.traineddata into your Tesseract tessdata folder "
+                "(see the README), or run OCR with English only.")
+        if "Could not initialize tesseract" in log:
+            raise RuntimeError(
+                "Tesseract could not start. Check that TESSDATA_PREFIX, "
+                "if set, points at a real tessdata folder.")
+        raise RuntimeError(f"OCR failed: {log[:800]}")
     return {"output": outp}
 
 
@@ -687,7 +718,7 @@ def main():
         req = json.loads(sys.stdin.buffer.read().decode("utf-8"))
         task = req["task"]
         if task not in TASKS:
-            raise ValueError(f"Task tidak dikenal: {task}")
+            raise ValueError(f"Unknown task: {task}")
         result = TASKS[task](req.get("params", {}))
         print(json.dumps({"ok": True, "result": result}))
     except Exception as e:  # noqa: BLE001 - single error boundary to JSON

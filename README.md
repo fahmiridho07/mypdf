@@ -76,8 +76,13 @@ Grab the latest setup exe from the
 
 ## Requirements
 
-**The Windows installer ships with everything included**, a bundled Python
-runtime with all engine libraries, so it runs out of the box.
+**The Windows installer runs out of the box.** It bundles a Python runtime
+with all engine libraries (PyMuPDF, pikepdf, Pillow, pdf2docx, and the
+ocrmypdf package), so no Python or pip setup is needed.
+
+Three features need free external programs that are not bundled with the
+installer. The app detects what is installed and tells you exactly what is
+missing before you run anything:
 
 On Linux, macOS, or when running from source, you need **Python 3.10+** with
 `pip install pikepdf pymupdf pillow` (plus `pdf2docx` and `ocrmypdf` for those
@@ -85,12 +90,12 @@ features).
 
 Optional, per feature (the app detects what is installed and tells you):
 
-| Feature | Tool |
-|---|---|
-| Strong compression | [Ghostscript](https://ghostscript.com) |
-| Office to PDF | [LibreOffice](https://libreoffice.org) |
-| OCR | [Tesseract](https://github.com/UB-Mannheim/tesseract) plus `pip install ocrmypdf` |
-| PDF to Word | `pip install pdf2docx` |
+| Feature | Tool | Notes |
+|---|---|---|
+| Strong compression | [Ghostscript](https://ghostscript.com) | Without it, compression still works but stays mild |
+| Office to PDF | [LibreOffice](https://libreoffice.org) | Required for this tool |
+| OCR | [Tesseract](https://github.com/UB-Mannheim/tesseract) | The OCR engine package ships with the installer; only the Tesseract program is an extra install |
+| PDF to Word | `pip install pdf2docx` | Only when running from source; the Windows installer already includes it |
 
 For OCR in languages beyond English, place the matching `.traineddata` from
 [tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) into your
@@ -122,7 +127,14 @@ processing is on device, and your files stay in your folders.
 
 [AGPL 3.0](LICENSE). The engine builds on [PyMuPDF](https://github.com/pymupdf/PyMuPDF)
 (AGPL licensed), so this project shares the same license. In short: use it,
-modify it, ship it, but keep the source open.
+modify it, ship it, but keep the source open. The full source for every
+release is published in this repository, and each release is built from it in
+public by GitHub Actions.
+
+Bundled and optional components keep their own licenses: pikepdf, Pillow,
+pdf2docx, and ocrmypdf (Python packages inside the Windows installer),
+plus Ghostscript, LibreOffice, and Tesseract when installed separately as
+per feature helpers.
 
 ## Contributing
 

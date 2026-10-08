@@ -106,7 +106,13 @@ def main():
 
         img = r["result"]["outputs"][0]
         r = call("img2pdf", {"inputs": [img], "output": os.path.join(tmp, "fromimg.pdf")})
-        check("img2pdf", r["ok"])
+        check("img2pdf (single image)", r["ok"] and call("info", {"input": r["result"]["output"]})["result"]["pages"] == 1)
+
+        r = call("img2pdf", {"inputs": [img, img], "output": os.path.join(tmp, "fromimgs.pdf")})
+        check("img2pdf (multiple images)", r["ok"] and call("info", {"input": r["result"]["output"]})["result"]["pages"] == 2)
+
+        r = call("img2pdf", {"inputs": [], "output": os.path.join(tmp, "empty.pdf")})
+        check("img2pdf rejects empty inputs", not r["ok"])
 
         r = call("extract_text", {"input": a, "output": os.path.join(tmp, "t.txt")})
         check("extract text", r["ok"] and r["result"]["chars"] > 0)
@@ -119,6 +125,23 @@ def main():
 
         r = call("page_thumbs", {"input": a})
         check("page thumbs", r["ok"] and len(r["result"]["thumbs"]) == 3)
+
+        r = call("thumbnail", {"input": img})
+        check("thumbnail works on images too",
+              r["ok"] and (r["result"]["thumb"] or "").startswith("data:image/png"))
+
+        r = call("thumbnails", {"inputs": [img]})
+        check("batch thumbnails accept images",
+              r["ok"] and img in r["result"] and "thumb" in r["result"][img])
+
+        r = call("rearrange", {"input": merged, "order": [],
+                               "output": os.path.join(tmp, "empty_order.pdf")})
+        check("rearrange rejects empty order", not r["ok"])
+
+        r = call("extract_pages", {"input": merged, "pages": "xyz",
+                                   "output": os.path.join(tmp, "bad.pdf")})
+        check("extract pages rejects bad spec",
+              not r["ok"] and "page selection" in r.get("error", ""))
 
         r = call("rearrange", {"input": merged, "order": [4, 0, 2],
                                "rotations": {"0": 90},

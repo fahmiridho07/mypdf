@@ -354,12 +354,12 @@ export default function App() {
 
   const outBase = (input: string) => settings.outDir ?? dirOf(input);
   const outFor = (input: string, suffix: string, ext = "pdf") =>
-    `${outBase(input)}\\${stemOf(input)}_${suffix}.${ext}`;
+    `${outBase(input)}/${stemOf(input)}_${suffix}.${ext}`;
 
   const fetchMeta = useCallback((paths: string[]) => {
-    const pdfs = paths.filter((x) => extOf(x) === "pdf").slice(0, 40);
-    if (pdfs.length === 0) return;
-    invoke<Record<string, FileMeta>>("run_engine", { task: "thumbnails", params: { inputs: pdfs } })
+    const supported = paths.filter((x) => extOf(x) === "pdf" || EXT.image.includes(extOf(x))).slice(0, 40);
+    if (supported.length === 0) return;
+    invoke<Record<string, FileMeta>>("run_engine", { task: "thumbnails", params: { inputs: supported } })
       .then((all) => setMeta((prev) => ({ ...prev, ...all })))
       .catch(() => {});
   }, []);
@@ -441,7 +441,7 @@ export default function App() {
         return { inputs: files, output: outFor(input, "merged") };
       case "split":
         return {
-          input, output_dir: `${outBase(input)}\\${stemOf(input)}_split`, mode: splitMode,
+          input, output_dir: `${outBase(input)}/${stemOf(input)}_split`, mode: splitMode,
           ...(splitMode === "ranges" ? { ranges: ranges.split(";").map((x) => x.trim()).filter(Boolean) } : {}),
         };
       case "extract_pages":
@@ -461,13 +461,13 @@ export default function App() {
       case "unlock":
         return { input, password, output: outFor(input, "unlocked") };
       case "pdf2img":
-        return { input, dpi, format: imgFormat, output_dir: `${outBase(input)}\\${stemOf(input)}_images` };
+        return { input, dpi, format: imgFormat, output_dir: `${outBase(input)}/${stemOf(input)}_images` };
       case "img2pdf":
         return { inputs: files, output: outFor(input, "document") };
       case "office2pdf":
-        return { input, output: `${outBase(input)}\\${stemOf(input)}.pdf` };
+        return { input, output: `${outBase(input)}/${stemOf(input)}.pdf` };
       case "pdf2docx":
-        return { input, output: `${outBase(input)}\\${stemOf(input)}.docx` };
+        return { input, output: `${outBase(input)}/${stemOf(input)}.docx` };
       case "ocr":
         return { input, lang: ocrLang, output: outFor(input, "ocr") };
       case "extract_text":
@@ -580,7 +580,7 @@ export default function App() {
     (t.id === "ocr" && doctor != null && !(doctor.ocrmypdf && doctor.tesseract));
 
   const lockedInput = tool?.id !== "unlock" && files.some((f) => meta[f]?.encrypted);
-  const needsTwo = tool != null && (tool.id === "merge" || tool.id === "img2pdf");
+  const needsTwo = tool != null && tool.id === "merge";
 
   const canRun = files.length > 0 && !busy && !lockedInput &&
     (tool == null || !missingFor(tool)) &&
@@ -839,8 +839,14 @@ export default function App() {
             {missingFor(tool) && (
               <div className="notice">
                 {tool.id === "ocr" ? (
-                  <>{s.missingOcr} <code>winget install UB-Mannheim.TesseractOCR</code>
-                    {" + "}<code>pip install ocrmypdf</code>. {s.thenReopen}</>
+                  doctor != null && doctor.ocrmypdf && !doctor.tesseract ? (
+                    <>{s.missingOne} <code>winget install UB-Mannheim.TesseractOCR</code>. {s.thenReopen}</>
+                  ) : doctor != null && doctor.tesseract && !doctor.ocrmypdf ? (
+                    <>{s.missingOne} <code>pip install ocrmypdf</code>. {s.thenReopen}</>
+                  ) : (
+                    <>{s.missingOcr} <code>winget install UB-Mannheim.TesseractOCR</code>
+                      {" + "}<code>pip install ocrmypdf</code>. {s.thenReopen}</>
+                  )
                 ) : tool.id === "pdf2docx" ? (
                   <>{s.missingOne} <code>pip install pdf2docx</code>. {s.thenReopen}</>
                 ) : (
@@ -873,8 +879,8 @@ export default function App() {
                       <span className="file-body">
                         <span className="file-name" title={f}>{nameOf(f)}</span>
                         <span className="file-meta">
-                          {m?.pages ? s.pages(m.pages) : ""}
-                          {m?.pages && m?.size_bytes ? " · " : ""}
+                          {extOf(f) === "pdf" && m?.pages ? s.pages(m.pages) : ""}
+                          {extOf(f) === "pdf" && m?.pages && m?.size_bytes ? " · " : ""}
                           {m?.size_bytes ? fmtSize(m.size_bytes) : ""}
                           {m?.encrypted ? ` · ${s.lockedMeta}` : ""}
                         </span>
@@ -1091,11 +1097,14 @@ export default function App() {
               )}
 
               {tool.id === "ocr" && (
-                <div className="chips">
-                  {([["ind+eng", s.langBoth], ["ind", s.langInd], ["eng", s.langEng]] as const).map(([v, l]) => (
-                    <button key={v} className={`chip${ocrLang === v ? " on" : ""}`} onClick={() => setOcrLang(v)}>{l}</button>
-                  ))}
-                </div>
+                <>
+                  <div className="chips">
+                    {([["ind+eng", s.langBoth], ["ind", s.langInd], ["eng", s.langEng]] as const).map(([v, l]) => (
+                      <button key={v} className={`chip${ocrLang === v ? " on" : ""}`} onClick={() => setOcrLang(v)}>{l}</button>
+                    ))}
+                  </div>
+                  <p className="option-hint">{s.ocrLangHint}</p>
+                </>
               )}
 
               {tool.id === "set_metadata" && (

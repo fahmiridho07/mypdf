@@ -54,8 +54,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "MyPDF __VERSION__"
           releaseBody: >
-            Windows builds ship with everything included. On Linux and macOS,
-            install Python 3.10+ with `pip install pymupdf pikepdf pillow`.
+            Windows installers run out of the box with a bundled Python
+            runtime and all engine libraries. Ghostscript, LibreOffice, and
+            Tesseract are optional per feature helpers and are not bundled;
+            the app tells you exactly what is missing. On Linux and macOS,
+            install Python 3.10+ with `pip install pymupdf pikepdf pillow pdf2docx ocrmypdf`.
             Optional per feature tools are listed in the README.
 
 

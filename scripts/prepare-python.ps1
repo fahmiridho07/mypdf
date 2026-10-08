@@ -22,9 +22,13 @@ Expand-Archive $zip -DestinationPath $dir -Force
 $pth = Get-ChildItem $dir -Filter "python3*._pth" | Select-Object -First 1
 Add-Content $pth.FullName "Lib\site-packages"
 
-Write-Output "installing engine dependencies"
+Write-Output "installing engine dependencies (pinned for reproducible releases)"
 python -m pip install --quiet --target (Join-Path $dir "Lib\site-packages") `
     --python-version 311 --platform win_amd64 --only-binary=:all: `
-    pymupdf pikepdf pillow pdf2docx ocrmypdf
+    "pymupdf==1.28.0" "pikepdf==10.10.0" "pillow==12.3.0" "pdf2docx==0.5.13" "ocrmypdf==16.13.0"
+
+Write-Output "verifying bundled runtime imports"
+& (Join-Path $dir "python.exe") -c "import fitz, pikepdf, PIL, pdf2docx, ocrmypdf; print('bundled imports ok')"
+if ($LASTEXITCODE -ne 0) { throw "bundled runtime verification failed" }
 
 Write-Output "bundled runtime ready at $dir"
