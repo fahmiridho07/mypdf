@@ -57,7 +57,28 @@ def main():
         page.insert_text((72, y + 20), "CONTOH / SAMPLE DOCUMENT", fontsize=10)
         doc.save(os.path.join(OUT, name))
         doc.close()
-    print(f"wrote {len(DOCS)} synthetic invoices to {OUT}")
+    make_scan_sample()
+    print(f"wrote {len(DOCS) + 1} synthetic invoices to {OUT}")
+
+
+def make_scan_sample():
+    """Image only twin of inv-01: no text layer, forces the OCR fallback.
+    Rendered through fitz itself so glyphs stay OCR legible."""
+    doc = fitz.open()
+    page = doc.new_page(width=900, height=500)
+    y = 80
+    for line in DOCS[0][1]:
+        page.insert_text((60, y), line, fontsize=28)
+        y += 60
+    png = os.path.join(OUT, "_scan_tmp.png")
+    page.get_pixmap(dpi=200).save(png)
+    scan = fitz.open()
+    spage = scan.new_page(width=900, height=500)
+    spage.insert_image(spage.rect, filename=png)
+    scan.save(os.path.join(OUT, "inv-06-scan.pdf"))
+    scan.close()
+    doc.close()
+    os.remove(png)
 
 
 if __name__ == "__main__":
