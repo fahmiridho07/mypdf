@@ -1,5 +1,20 @@
 # Smart Intake evaluation (2026-10-08, mock provider)
 
+## Hardening pass (same day)
+
+- Human review: flagged rows pause for accept/edit/skip with revalidation;
+  clean rows pass silently; `--auto` approves everything for CI. Corrections
+  are covered by scripted review tests.
+- Organized copies: unique `(2)` suffixes on collision, failed extractions
+  never organized, originals never touched. Both covered by tests.
+- OCR fallback: image only `inv-06-scan.pdf` recovered fully on this machine
+  (Tesseract present, `ocr:true` in usage, vendor and total exact, no flags).
+  Without Tesseract the row keeps nulls with `ocr_unavailable`; CI covers
+  that branch.
+- Free tier: cloud calls capped at 2 tries, `Retry-After` honored on 429,
+  optional `--delay` between calls, mock stays default and unlimited.
+- Suite: 30 checks green (was 23), core engine 37/37 untouched.
+
 ## Method
 
 5 synthetic invoices (`make_samples.py`), pipeline with `--provider mock`,

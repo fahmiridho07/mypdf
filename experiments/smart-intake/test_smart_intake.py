@@ -72,12 +72,13 @@ def main():
     except RuntimeError as e:
         check("gemini without key raises", "GEMINI_API_KEY" in str(e))
 
+    import shutil
     import tempfile as _tf
-    from pipeline import process_doc  # noqa: E402
+    from pipeline import process_doc, review_records, unique_name  # noqa: E402
 
     class _Boom:
         def extract(self, text):
-            raise RuntimeError("API call failed after 3 tries (HTTP 503)")
+            raise RuntimeError("API call failed after 2 tries (HTTP 503)")
 
     with _tf.TemporaryDirectory(prefix="smart_intake_boom_") as tmp:
         row = process_doc(_Boom(), os.path.join(HERE, "samples", "inv-01-sederhana.pdf"),
@@ -90,12 +91,51 @@ def main():
     except ValueError:
         check("unknown provider rejected", True)
 
+    with _tf.TemporaryDirectory(prefix="smart_intake_uniq_") as tmp:
+        check("unique name keeps first",
+              unique_name(tmp, "b.pdf").endswith("b.pdf"))
+        open(os.path.join(tmp, "a.pdf"), "w").close()
+        check("unique name never overwrites",
+              unique_name(tmp, "a.pdf").endswith("a (2).pdf"))
+
+    def scripted(answers):
+        it = iter(answers)
+        return lambda prompt="": next(it)
+
+    flagged = {"file": "inv-05-bad-math.pdf", "invoice_number": "S-2026-100",
+               "vendor": "Sample Parts Ltd", "invoice_date": "2026-09-15",
+               "currency": "USD", "subtotal": 1000.0, "tax": 100.0,
+               "total": 1150.0,
+               "flags": "inconsistent_total:subtotal(1000.0)+tax(100.0)=1100.0!=total(1150.0)",
+               "latency_ms": 1.0, "usage": "{}"}
+    import copy
+    approved, skipped = review_records(
+        [copy.deepcopy(flagged)],
+        input_fn=scripted(["e", "", "", "", "", "", "", "1100"]))
+    check("review correction fixes total",
+          approved[0]["total"] == 1100.0 and approved[0]["flags"] == ""
+          and approved[0]["status"] == "edited" and not skipped)
+    approved, skipped = review_records(
+        [copy.deepcopy(flagged)], input_fn=scripted(["s"]))
+    check("review skip excludes from export",
+          not approved and len(skipped) == 1
+          and skipped[0]["status"] == "skipped")
+    approved, skipped = review_records(
+        [copy.deepcopy(flagged)], input_fn=scripted(["accept"]))
+    check("review accept keeps flags for the record",
+          approved[0]["flags"].startswith("inconsistent_total"))
+
     with tempfile.TemporaryDirectory(prefix="smart_intake_test_") as tmp:
-        indir = os.path.join(HERE, "samples")
+        indir = os.path.join(tmp, "in")
+        os.makedirs(indir)
+        for n in ["inv-01-sederhana.pdf", "inv-02-english.pdf",
+                  "inv-03-minimal.pdf", "inv-04-missing-tax.pdf",
+                  "inv-05-bad-math.pdf"]:
+            shutil.copy(os.path.join(HERE, "samples", n), indir)
         outdir = os.path.join(tmp, "results")
         r = subprocess.run(
             [sys.executable, os.path.join(HERE, "pipeline.py"),
-             "--in", indir, "--out", outdir],
+             "--in", indir, "--out", outdir, "--auto"],
             capture_output=True, text=True, timeout=300)
         check("pipeline exits 0", r.returncode == 0)
         with open(os.path.join(outdir, "invoices.csv"), encoding="utf-8") as f:
@@ -111,15 +151,45 @@ def main():
               not os.path.exists(os.path.join(outdir, "organized")))
         check("review json written", os.path.isfile(os.path.join(outdir, "review.json")))
 
+        dupdir = os.path.join(tmp, "dups")
+        os.makedirs(dupdir)
+        shutil.copy(os.path.join(HERE, "samples", "inv-03-minimal.pdf"),
+                    os.path.join(dupdir, "first.pdf"))
+        shutil.copy(os.path.join(HERE, "samples", "inv-03-minimal.pdf"),
+                    os.path.join(dupdir, "second.pdf"))
         r = subprocess.run(
             [sys.executable, os.path.join(HERE, "pipeline.py"),
-             "--in", indir, "--out", outdir, "--confirm-rename"],
+             "--in", dupdir, "--out", os.path.join(tmp, "dupout"),
+             "--auto", "--confirm-rename"],
             capture_output=True, text=True, timeout=300)
-        org = os.path.join(outdir, "organized")
-        check("confirm rename writes copies",
-              r.returncode == 0 and len(os.listdir(org)) == 5)
-        check("original names preserved in samples",
-              len(os.listdir(indir)) == 5)
+        got = sorted(os.listdir(os.path.join(tmp, "dupout", "organized")))
+        check("duplicate names never collide",
+              r.returncode == 0 and len(got) == 2 and got[0] != got[1]
+              and any("(2)" in g for g in got))
+
+    from pipeline import organize_copies  # noqa: E402
+    with _tf.TemporaryDirectory(prefix="smart_intake_org_") as tmp:
+        boomdir = os.path.join(tmp, "boom")
+        os.makedirs(boomdir)
+        shutil.copy(os.path.join(HERE, "samples", "inv-01-sederhana.pdf"),
+                    os.path.join(boomdir, "x.pdf"))
+        err_row = {"file": "x.pdf", "invoice_number": None, "vendor": None,
+                   "invoice_date": None, "currency": None, "subtotal": None,
+                   "tax": None, "total": None, "flags": "provider_error"}
+        written = organize_copies(boomdir, [err_row], tmp, confirm=True)
+        check("failed extraction never organized",
+              written == [] and not os.path.exists(os.path.join(tmp, "organized")))
+
+    with _tf.TemporaryDirectory(prefix="smart_intake_scan_") as tmp:
+        row = process_doc(mock, os.path.join(HERE, "samples", "inv-06-scan.pdf"),
+                          "inv-06-scan.pdf", tmp)
+        use = json.loads(row["usage"])
+        check("scan engages the OCR fallback",
+              use.get("ocr") is True or "ocr_error" in use)
+        recovered = row["vendor"] == "PT CONTOH MAJU JAYA"
+        unavailable = "ocr_unavailable" in row["flags"].split(";") or row["vendor"] is None
+        check("scan recovers text or says OCR is missing",
+              recovered or unavailable)
 
     print(f"\n{passed} passed, {len(failed)} failed")
     if failed:

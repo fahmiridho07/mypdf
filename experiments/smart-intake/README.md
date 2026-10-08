@@ -31,8 +31,22 @@ flags and human review in between.
 ```powershell
 python experiments/smart-intake/make_samples.py
 python experiments/smart-intake/test_smart_intake.py
-python experiments/smart-intake/pipeline.py --in experiments/smart-intake/samples --out experiments/smart-intake/results
+python experiments/smart-intake/pipeline.py --in experiments/smart-intake/samples --out experiments/smart-intake/results --auto
 ```
+
+Without `--auto` on a terminal, flagged rows pause for human review
+(accept, edit field by field with revalidation, or skip) before the CSV
+is written. Clean rows never prompt. Skipped and failed extractions are
+excluded from the CSV and never organized.
+
+Scanned PDFs (under 50 text characters) automatically fall back to local
+OCR via the engine (needs Tesseract plus ocrmypdf); without them the row
+keeps nulls with an `ocr_unavailable` flag instead of failing.
+
+Free tier notes: the default provider is offline and unlimited. Cloud
+calls default to 2 tries, honor `Retry-After` on 429, and take
+`--delay SECONDS` between calls (skipped for mock). Nothing here enables
+billing or pays for usage.
 
 Live runs (need a key, send document text to the provider):
 

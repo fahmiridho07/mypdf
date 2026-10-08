@@ -183,8 +183,9 @@ def get_provider(name, model=None):
     raise ValueError(f"Unknown provider: {name}")
 
 
-def _post_json(url, body, timeout=120, tries=3):
-    """POST with retry on transient failures. Returns parsed JSON."""
+def _post_json(url, body, timeout=120, tries=2):
+    """POST with limited retry. Default 2 tries: free tiers quota wall
+    fast, and extra retries only burn quota. Honors Retry-After on 429."""
     import time as _time
     import urllib.error
     last = None
