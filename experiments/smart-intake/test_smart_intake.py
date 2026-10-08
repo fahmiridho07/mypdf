@@ -67,6 +67,24 @@ def main():
     except RuntimeError as e:
         check("claude without key raises", "ANTHROPIC_API_KEY" in str(e))
     try:
+        get_provider("gemini")
+        check("gemini without key raises", False)
+    except RuntimeError as e:
+        check("gemini without key raises", "GEMINI_API_KEY" in str(e))
+
+    import tempfile as _tf
+    from pipeline import process_doc  # noqa: E402
+
+    class _Boom:
+        def extract(self, text):
+            raise RuntimeError("API call failed after 3 tries (HTTP 503)")
+
+    with _tf.TemporaryDirectory(prefix="smart_intake_boom_") as tmp:
+        row = process_doc(_Boom(), os.path.join(HERE, "samples", "inv-01-sederhana.pdf"),
+                          "inv-01-sederhana.pdf", tmp)
+    check("provider failure becomes error row, batch continues",
+          row["flags"] == "provider_error" and row["vendor"] is None)
+    try:
         get_provider("watson")
         check("unknown provider rejected", False)
     except ValueError:

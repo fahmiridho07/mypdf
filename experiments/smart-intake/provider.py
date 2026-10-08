@@ -178,4 +178,92 @@ def get_provider(name, model=None):
         return MockProvider()
     if name == "claude":
         return ClaudeProvider(model=model)
+    if name == "gemini":
+        return GeminiProvider(model=model)
     raise ValueError(f"Unknown provider: {name}")
+
+
+def _post_json(url, body, timeout=120, tries=3):
+    """POST with retry on transient failures. Returns parsed JSON."""
+    import time as _time
+    import urllib.error
+    last = None
+    for attempt in range(tries):
+        try:
+            req = urllib.request.Request(
+                url, data=body, headers={"content-type": "application/json"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:300]
+            last = f"HTTP {e.code}: {detail}"
+            if e.code < 500 and e.code != 429:
+                break
+            if e.code == 429:
+                # Honor the server's backoff ask instead of hammering quota.
+                wait = 30
+                retry_after = e.headers.get("Retry-After")
+                if retry_after:
+                    try:
+                        wait = min(120, int(retry_after) + 1)
+                    except ValueError:
+                        pass
+                _time.sleep(wait)
+                continue
+        except Exception as e:  # noqa: BLE001 - timeouts, resets
+            last = type(e).__name__
+        _time.sleep(2 ** attempt)
+    raise RuntimeError(f"API call failed after {tries} tries ({last})")
+
+
+class GeminiProvider(ExtractionProvider):
+    """Google Gemini API integration. Key comes from GEMINI_API_KEY only,
+    never from files, flags, or the app bundle."""
+    name = "gemini"
+
+    def __init__(self, model=None):
+        key = os.environ.get("GEMINI_API_KEY", "")
+        if not key:
+            raise RuntimeError("GEMINI_API_KEY is not set.")
+        model = model or os.environ.get("GEMINI_MODEL", "")
+        if not model:
+            raise RuntimeError(
+                "Set GEMINI_MODEL to a current model id from the Gemini docs.")
+        self._key = key
+        self._model = model
+
+    def extract(self, text):
+        import urllib.parse
+        t0 = time.perf_counter()
+        body = json.dumps({
+            "system_instruction": {"parts": [{"text": PROMPT}]},
+            "contents": [{"parts": [{"text": text[:12000]}]}],
+            "generationConfig": {"responseMimeType": "application/json",
+                                 "maxOutputTokens": 1024},
+        }).encode("utf-8")
+        url = ("https://generativelanguage.googleapis.com/v1beta/models/"
+               f"{urllib.parse.quote(self._model, safe='')}:generateContent"
+               f"?key={urllib.parse.quote(self._key, safe='')}")
+        try:
+            payload = _post_json(url, body)
+        except Exception as e:  # noqa: BLE001 - surface as pipeline error
+            raise RuntimeError(f"Gemini API call failed: {e}")
+        try:
+            content = payload["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError):
+            raise RuntimeError("Gemini reply had no text content.")
+        content = re.sub(r"^```(?:json)?|```$", "", content.strip())
+        try:
+            data = json.loads(content)
+        except ValueError:
+            raise RuntimeError("Gemini reply was not valid JSON.")
+        rec = blank_record()
+        for f in FIELDS:
+            v = data.get(f)
+            rec[f] = v if v in (None,) or isinstance(v, (str, float, int)) else None
+        use = payload.get("usageMetadata", {}) or {}
+        dt = (time.perf_counter() - t0) * 1000
+        return rec, {"provider_ms": round(dt, 1),
+                     "input_tokens": use.get("promptTokenCount"),
+                     "output_tokens": use.get("candidatesTokenCount"),
+                     "model": self._model}
