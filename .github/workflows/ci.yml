@@ -13,8 +13,41 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pymupdf pikepdf pillow
+      # pdf2docx included so the real conversion path is exercised, not just
+      # the missing package hint. ocrmypdf/Tesseract stay manual QA: they need
+      # system binaries no CI image provides.
+      - run: pip install pymupdf pikepdf pillow pdf2docx
       - run: python tests/engine_smoke.py
+
+  # Verifies the exact runtime that ships inside the Windows installer:
+  # embeddable CPython plus pinned engine dependencies.
+  windows-bundled-engine:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Prepare bundled Python runtime
+        shell: pwsh
+        run: ./scripts/prepare-python.ps1
+      - name: Engine smoke tests on bundled runtime
+        shell: pwsh
+        run: ./src-tauri/python-embed/python.exe tests/engine_smoke.py
+
+  rust-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tauri system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: cargo check --manifest-path src-tauri/Cargo.toml
 
   frontend-build:
     runs-on: ubuntu-latest
